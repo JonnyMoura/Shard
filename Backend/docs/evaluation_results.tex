@@ -1,0 +1,219 @@
+\subsection{Experimental Evaluation and Validation}
+\label{subsec:evaluation}
+
+This subsection presents the experimental evaluation of the proposed evolutionary and synthesis algorithm. The evaluation follows established protocols for \gls{qd} algorithm assessment as proposed by ~\cite{mouret2015illuminating} and further formalised ~\cite{pugh2016quality}.
+
+\paragraph{Experimental Setup}
+
+The evaluation was conducted using the following experimental conditions:
+
+\begin{table}[htbp]
+\centering
+\caption{Experimental Parameters}
+\label{tab:exp_params}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Number of independent runs & 5 \\
+Generations per run & 50 \\
+Population size (batch) & 64 \\
+Solution dimensionality & 11 parameters \\
+Archive dimensions & $6 \times 6 \times 5$ (180 cells) \\
+Audio duration & 5 seconds \\
+Sampling rate & 44,100 Hz \\
+\midrule
+\multicolumn{2}{l}{\textit{Emitter Configuration}} \\
+Evolution Strategy Emitters & 12 (batch size: 4, $\sigma_0 = 0.7$) \\
+Iso-Line Emitters & 4 (batch size: 4) \\
+\midrule
+\multicolumn{2}{l}{\textit{Behavioral Descriptors (Measures)}} \\
+Dimension 1 & Spectral Centroid [300--5000 Hz] \\
+Dimension 2 & Spectral Flux [300--4000] \\
+Dimension 3 & Spectral Rolloff [800--6000 Hz] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The archive structure uses the same three-dimensional grid defined by the same spectral descriptors. This configuration allows for further testing and validation of the algorithm.
+
+\paragraph{Quality-Diversity Metrics}
+\label{par:qd_metrics}
+
+Following the standardized evaluation framework for Quality-Diversity algorithms~\cite{pugh2016quality,cully2015robots}, we employ the following metrics:
+
+\paragraph{QD-Score}
+
+The QD-Score represents the sum of all objective (fitness) values stored in the archive and is the primary metric for assessing QD algorithm performance~\cite{pugh2016quality}:
+
+\begin{equation}
+\text{QD-Score} = \sum_{i \in \mathcal{A}} f_i
+\end{equation}
+
+\noindent where $\mathcal{A}$ is the set of filled archive cells and $f_i$ is the fitness value of the elite solution in cell $i$. This metric captures both the quality of solutions (higher fitness values) and diversity (more filled cells contribute to the sum). Unlike traditional optimization that seeks a single optimal solution, QD-Score rewards algorithms that find many high-performing solutions across the behavioral space.
+
+\paragraph{Coverage}
+
+Coverage measures the fraction of the archive that has been filled with at least one solution~\cite{mouret2015illuminating}:
+
+\begin{equation}
+\text{Coverage} = \frac{|\mathcal{A}|}{|\mathcal{A}_{\max}|}
+\end{equation}
+
+\noindent where $|\mathcal{A}|$ is the number of filled cells and $|\mathcal{A}_{\max}|$ is the total number of cells in the archive. Higher coverage indicates greater behavioral diversity in the discovered solutions.
+
+\paragraph{Global Reliability}
+
+Global Reliability $G(m)$ measures the consistency of an algorithm across multiple independent runs by comparing each run's archive to the union of all runs~\cite{cully2015robots}:
+
+\begin{equation}
+G(m) = \frac{1}{|M|} \sum_{(x,y) \in M} \frac{m_{xy}}{M_{xy}}
+\end{equation}
+
+\noindent where $m$ is the archive from a single run, $M$ is the union archive (maximum fitness per cell across all runs), and $m_{xy}$ is the fitness value at cell $(x,y)$ (or 0 if empty). This metric indicates how reliably a single run discovers solutions comparable to the best found across all runs.
+
+\paragraph{Precision}
+
+Precision $P(m)$ measures the quality of solutions in cells that were filled, relative to the best known solutions~\cite{cully2015robots}:
+
+\begin{equation}
+P(m) = \frac{1}{|m|} \sum_{(x,y) \in m} \frac{m_{xy}}{M_{xy}}
+\end{equation}
+
+\noindent where the sum is only over cells that are filled in run $m$. High precision indicates that when the algorithm fills a cell, the solution quality is close to the best discovered across all runs.
+
+\paragraph{Results and Analysis}
+
+\textbf{QD Performance Across Runs.}
+
+Table~\ref{tab:qd_results} presents the QD metrics obtained across five independent runs.
+
+\begin{table}[htbp]
+\centering
+\caption{Quality-Diversity Metrics Across Five Independent Runs}
+\label{tab:qd_results}
+\begin{tabular}{ccccccc}
+\toprule
+\textbf{Run} & \textbf{QD-Score} & \textbf{Coverage} & \textbf{Filled Cells} & \textbf{Union Cov.} & \textbf{Reliability} & \textbf{Precision} \\
+\midrule
+0 & 63.75 & 47.2\% & 85/180 & 87.6\% & 0.833 & 0.950 \\
+1 & 62.22 & 46.1\% & 83/180 & 85.6\% & 0.814 & 0.951 \\
+2 & 62.71 & 45.0\% & 81/180 & 83.5\% & 0.810 & 0.970 \\
+3 & 60.23 & 42.8\% & 77/180 & 79.4\% & 0.773 & 0.973 \\
+4 & 65.73 & 47.8\% & 86/180 & 88.7\% & 0.859 & 0.969 \\
+\midrule
+\textbf{Mean} & \textbf{62.93} & \textbf{45.8\%} & \textbf{82.4/180} & \textbf{84.9\%} & \textbf{0.818} & \textbf{0.963} \\
+\textbf{Std} & \textbf{1.97} & \textbf{2.0\%} & \textbf{3.6} & \textbf{3.7\%} & \textbf{0.031} & \textbf{0.011} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textit{Note: Coverage is calculated against the theoretical archive maximum (180 cells for a $6 \times 6 \times 5$ grid). Union Coverage indicates the proportion of the union archive (97 cells filled across all runs) that each run discovered, which is used for computing Reliability and Precision metrics.}
+
+\vspace{0.5em}
+
+The results demonstrate consistent performance across independent runs. The algorithm achieves a mean QD-Score of $62.93 \pm 1.97$, indicating stable quality-diversity optimization. The theoretical coverage of $45.8\% \pm 2.0\%$ (82.4 out of 180 cells) reveals that approximately half of the behavioral space defined by the archive grid is reachable given the synthesis parameter bounds. Across all five runs combined, 97 unique cells were discovered (53.9\% of the archive), establishing the empirically reachable region of the behavioral space. Individual runs achieve $84.9\% \pm 3.7\%$ coverage of this reachable region, demonstrating effective exploration within the feasible manifold.
+
+The high precision values ($0.963 \pm 0.011$) indicate that when the algorithm fills a cell, the solution quality is consistently close to the best discovered across all runs. This suggests that the fitness landscape is being effectively exploited within each behavioral niche.
+
+The reliability scores ($0.818 \pm 0.031$) demonstrate good consistency across runs, meaning that a single run typically discovers solutions that are approximately 82\% as good as the union of all runs. This is a strong indicator of algorithmic stability for a stochastic optimization process.
+
+% INSERT FIGURE: plot_qd_over_gens.png
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/plot_qd_over_gens.png}
+\caption{QD-Score progression over generations (mean across 5 runs). The curve shows characteristic QD optimization behaviour with rapid initial growth followed by gradual convergence.}
+\label{fig:qd_over_gens}
+\end{figure}
+
+% INSERT FIGURE: plot_cov_over_gens.png
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/plot_cov_over_gens.png}
+\caption{Archive coverage over generations (mean across 5 runs). Coverage increases as the algorithm discovers solutions in new behavioral niches.}
+\label{fig:cov_over_gens}
+\end{figure}
+
+% INSERT FIGURE: plot_reliability.png
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/plot_reliability.png}
+\caption{Global Reliability per run. Values above 0.77 across all runs indicate consistent algorithmic performance.}
+\label{fig:reliability}
+\end{figure}
+
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/heatmap_final.png}
+\caption{Final archive heatmap (2D projection) showing the distribution of elite solutions across the Centroid-Flux behavioral space. Color intensity represents objective value.}
+\label{fig:heatmap}
+\end{figure}
+
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/heatmap_3d_scatter.png}
+\caption{3D scatter plot of the final archive showing elite solutions distributed across the three-dimensional behavioral space (Centroid × Flux × Rolloff).}
+\label{fig:3d_scatter}
+\end{figure}
+
+\textbf{Convergence Analysis.}
+Figure~\ref{fig:qd_over_gens} illustrates the QD-Score progression over generations. The curve exhibits the characteristic behavior of MAP-Elites optimization: rapid initial growth as the algorithm discovers new behavioral niches, followed by gradual convergence as the archive becomes saturated and improvements become incremental quality refinements within existing cells.
+
+The coverage plot (Figure~\ref{fig:cov_over_gens}) shows a similar pattern, with the archive filling rate highest in early generations when many cells are empty, then slowing as the algorithm must either discover increasingly rare unexplored niches or compete with existing elites.
+
+\textbf{Computational Performance.}
+To assess the computational requirements for practical deployment, we conducted timing experiments with 30-second audio synthesis, which represents a more realistic duration for musical applications.
+
+\begin{table}[htbp]
+\centering
+\caption{Computational Time per Generation (30-second audio, population size 64)}
+\label{tab:timing}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Generation} & \textbf{Total (s)} & \textbf{Synthesis (s)} & \textbf{Descriptors (s)} & \textbf{Synthesis \%} \\
+\midrule
+0 & 355.0 & 336.6 & 14.1 & 94.8\% \\
+1 & 404.2 & 390.5 & 12.6 & 96.6\% \\
+2 & 537.0 & 523.2 & 12.7 & 97.4\% \\
+3 & 487.1 & 473.5 & 12.4 & 97.2\% \\
+4 & 610.2 & 596.6 & 12.6 & 97.8\% \\
+\midrule
+\textbf{Mean} & \textbf{478.7} & \textbf{464.1} & \textbf{12.9} & \textbf{96.8\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The timing analysis reveals that audio synthesis dominates computational cost, accounting for approximately 96.8\% of total processing time. Descriptor extraction (spectral centroid, flux, rolloff, onset rate, and zero-crossing rate) is comparatively efficient at approximately 12.9 seconds per generation for 64 audio samples of 30 seconds each (approximately 0.2 seconds per sample). This can be due to computational limitations which can be supressed with better equipment to run the algorithm, such as a dedicated server.
+
+
+
+
+\paragraph{Discussion}
+
+The experimental results provide strong evidence for the effectiveness of the MAP-Elites Quality-Diversity approach in the context of our system. This discussion analyses the consistency of our algorithm implementation in the context of audio synthesis.
+
+\textbf{Quality-Diversity Performance.}
+The algorithm demonstrates a successful balance between quality optimization and behavioural diversity. With a mean QD-Score of $62.93 \pm 1.97$ and theoretical coverage of $45.8\% \pm 2.0\%$, the system consistently discovers high-quality solutions across a substantial portion of the behavioural space. The relatively low standard deviation (coefficient of variation $\approx 3.1\%$ for QD-Score) indicates robust performance across independent runs, which is particularly important for stochastic optimisation in creative applications where reproducibility supports iterative design workflows.
+
+The theoretical coverage of approximately 46\% (82 out of 180 cells) reveals an important characteristic of the synthesis parameter space: not all combinations of spectral descriptors (centroid, flux, rolloff) are achievable with the given synthesis parameters. The union archive of 97 cells (53.9\% of the grid) represents the empirically reachable manifold—regions of the behavioural space that can be produced by at least some parameter configuration. Individual runs achieve $84.9\% \pm 3.7\%$ coverage of this reachable manifold, indicating effective exploration within the feasible space. The remaining 83 cells (46.1\%) likely correspond to acoustically implausible or parameter-unreachable combinations of spectral characteristics.
+
+\textbf{Algorithmic Reliability and Precision.}
+The high precision values ($0.963 \pm 0.011$) demonstrate that when the algorithm successfully fills an archive cell, the solution quality is consistently close to the best discovered across all runs. This finding has important implications: it suggests that the fitness landscape within each behavioural niche is relatively smooth and that the evolutionary operators effectively exploit local optima. The precision metric effectively measures the algorithm's ability to find good solutions within discovered niches, as opposed to merely discovering niches.
+
+The reliability scores ($0.818 \pm 0.031$) indicate that a single run typically achieves approximately 82\% of the quality obtainable through multiple runs. This trade-off between computational cost (single vs. multiple runs) and solution quality is relevant for practical deployment: users seeking maximum diversity may benefit from aggregating multiple runs, while single runs provide substantial coverage for rapid exploration.
+
+\textbf{Convergence Characteristics.}
+The convergence behaviour exhibits the characteristic two-phase pattern of MAP-Elites optimization~\cite{mouret2015illuminating}:
+\begin{itemize}
+    \item \textbf{Exploration phase} (generations 0--20): Rapid growth in both QD-Score and coverage as the algorithm discovers new behavioral niches. The archive filling rate is highest during this phase.
+    \item \textbf{Exploitation phase} (generations 20--50): Gradual refinement as improvements become incremental quality enhancements within existing cells. Coverage growth slows as most accessible niches have been discovered.
+\end{itemize}
+
+This convergence pattern suggests that 50 generations provides sufficient optimisation time for the archive to approach saturation, though marginal improvements may continue with extended computation.
+
+
+
+\textbf{Practical Implications and Limitations.}
+The timing analysis reveals that audio synthesis dominates computational cost (96.8\% of total time), with near-linear scaling relative to audio duration enabling predictable resource planning for different application scenarios. These results validate Quality-Diversity optimization as an effective framework for our system: a single run produces 77--86 distinct audio textures, systematically exploring the behavioural space while maintaining quality through the fitness function. However, several limitations should be noted: the three-dimensional behavioural space simplifies the full perceptual space of audio textures, and the computational cost constrains real-time interactive applications. Future improvements on the algorithm could address these through subjective listening studies, higher-dimensional archives with learned perceptual embeddings, and optimization via GPU acceleration or neural surrogate models.

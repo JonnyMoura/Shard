@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Illuminating search spaces by mapping elites",
+    "authors": "Jean-Baptiste Mouret, Joel Lehman, and Kenneth O. Stanley",
+    "venue": "GECCO 2015",
+    "doi": "10.1145/2739480.2754689"
+  },
+  {
+    "title": "Robots that can adapt like animals",
+    "authors": "Antoine Cully, Jeff Clune, Danesh Tarapore, and Jean-Baptiste Mouret",
+    "venue": "Nature 2015",
+    "doi": "10.1038/nature14422"
+  },
+  {
+    "title": "Quality Diversity: Overcoming Deceptiveness in Search",
+    "authors": "Justin Pugh, Lisa Soros, and Kenneth O. Stanley",
+    "venue": "GECCO 2016",
+    "doi": "10.1145/2908812.2908899"
+  }
+]
