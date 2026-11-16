@@ -167,6 +167,9 @@ export class SaveMode {
             this.closeBtn.style.display = 'block';
         }
         
+        // NEW: Start pulsating animation for solids
+        this._startSolidPulsing();
+        
         console.log('✅ Entered Save Mode - All movement stopped, solids frozen in place');
     }
     
@@ -197,10 +200,13 @@ export class SaveMode {
         this.hoveredSolidIndex = -1;
         this.mainRenderer.domElement.style.cursor = 'default';
 
-        // STEP 5: ATOMIC material cleanup
+        // STEP 5: Stop pulsating animation
+        this._stopSolidPulsing();
+
+        // STEP 6: ATOMIC material cleanup
         this._atomicMaterialCleanup();
 
-        // STEP 6: Unfreeze movement
+        // STEP 7: Unfreeze movement
         this.particleSystem.targetLocked = false;
         this.particleSystem.stopAllMovement = false;
         
@@ -1509,5 +1515,81 @@ showErrorMessage(text) {
             
             delete solid.userData.__saveModeSelected;
         });
+    }
+
+    // NEW: Start pulsating animation for solids in save mode
+    _startSolidPulsing() {
+        // Store original emissive intensities and start animation
+        this._pulseAnimationId = null;
+        this._originalEmissiveIntensities = new WeakMap();
+        
+        // Cache original values
+        this.solidMeshes.forEach(solid => {
+            solid.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const mat = child.material;
+                    if (mat.emissiveIntensity !== undefined) {
+                        this._originalEmissiveIntensities.set(child, mat.emissiveIntensity);
+                    }
+                }
+            });
+        });
+        
+        // Start the pulse animation loop
+        const startTime = performance.now();
+        const pulseDuration = 1200; // ms for one full pulse cycle (faster for visibility)
+        const pulseAmplitude = 0.7; // Strong emissive intensity increase for visible glow
+        
+        const animatePulse = () => {
+            if (!this.isSaveMode) return; // Stop if no longer in save mode
+            
+            const elapsed = performance.now() - startTime;
+            // Smooth sine wave pulse (0 to 1 to 0)
+            const pulseValue = (Math.sin((elapsed / pulseDuration) * Math.PI * 2) + 1) / 2;
+            
+            this.solidMeshes.forEach(solid => {
+                solid.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const mat = child.material;
+                        const originalIntensity = this._originalEmissiveIntensities.get(child);
+                        if (originalIntensity !== undefined) {
+                            // Pulse the emissive intensity (strong glow effect)
+                            mat.emissiveIntensity = originalIntensity + (pulseValue * pulseAmplitude);
+                        }
+                    }
+                });
+            });
+            
+            this._pulseAnimationId = requestAnimationFrame(animatePulse);
+        };
+        
+        this._pulseAnimationId = requestAnimationFrame(animatePulse);
+        console.log('✨ Started solid pulsing animation');
+    }
+    
+    // NEW: Stop pulsating animation and restore original values
+    _stopSolidPulsing() {
+        // Cancel animation
+        if (this._pulseAnimationId) {
+            cancelAnimationFrame(this._pulseAnimationId);
+            this._pulseAnimationId = null;
+        }
+        
+        // Restore original emissive intensities
+        if (this._originalEmissiveIntensities) {
+            this.solidMeshes.forEach(solid => {
+                solid.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const originalIntensity = this._originalEmissiveIntensities.get(child);
+                        if (originalIntensity !== undefined) {
+                            child.material.emissiveIntensity = originalIntensity;
+                        }
+                    }
+                });
+            });
+            this._originalEmissiveIntensities = null;
+        }
+        
+        console.log('✨ Stopped solid pulsing animation');
     }
 }

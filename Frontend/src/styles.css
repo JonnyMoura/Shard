@@ -219,19 +219,31 @@ canvas#evolve2d {
     left: 50%;
     transform: translateX(-50%);
     z-index: 3000;
-    padding: 12px 24px;
-    background: transparent; /* CHANGED: Transparent like submit button */
-    color: #C9FBFF; /* CHANGED: Cyan text */
-    border: 1px solid rgba(201, 251, 255, 0.4); /* CHANGED: Cyan border */
+    padding: 14px 28px;
+    background: rgba(201, 251, 255, 0.05); /* Subtle background */
+    color: #C9FBFF;
+    border: 1px solid rgba(201, 251, 255, 0.4); /* Standard border */
     border-radius: 25px;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 14px;
-    font-weight: 300;
+    font-size: 15px;
+    font-weight: 400;
     letter-spacing: 0.08em;
     cursor: pointer;
-    box-shadow: none; /* CHANGED: Remove shadow */
+    box-shadow: 0 0 8px rgba(201, 251, 255, 0.12); /* Reduced glow */
     transition: all 0.3s ease;
-    text-shadow: 0 0 4px rgba(201, 251, 255, 0.3); /* CHANGED: Cyan glow */
+    text-shadow: 0 0 4px rgba(201, 251, 255, 0.3);
+    animation: saveBtnPulse 2.5s ease-in-out infinite; /* Slower, subtler pulse */
+}
+
+@keyframes saveBtnPulse {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(201, 251, 255, 0.12);
+        border-color: rgba(201, 251, 255, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 12px rgba(201, 251, 255, 0.2);
+        border-color: rgba(201, 251, 255, 0.55);
+    }
 }
 
 .save-combination-btn:hover {
@@ -951,7 +963,7 @@ filter: brightness(0.4) saturate(100%) invert(97%) sepia(20%) saturate(1400%) hu
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #0a0a20;
+    background: rgb(0, 20, 40);
     cursor: pointer;
     transition: opacity 1s ease-out;
 }
@@ -1079,7 +1091,7 @@ body.scene-fade-in {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 10, 32, 0.95);
+    background: rgba(0, 20, 40, 0.95);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     transition: opacity 0.5s ease-out;
@@ -1442,7 +1454,7 @@ body.scene-fade-in {
     z-index: 2900;
     
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.9rem;
+    font-size: 1.1rem; /* CHANGED: Increased from 0.9rem */
     font-weight: 100;
     color: #C9FBFF;
     text-align: center;
@@ -1477,7 +1489,7 @@ body.scene-fade-in {
 /* Responsive */
 @media (max-width: 768px) {
     .hamburger-hover-message {
-        font-size: 0.9rem;
+        font-size: 1rem; /* CHANGED: Increased from 0.9rem */
         bottom: 30px;
         max-width: 90%;
     }
@@ -1485,7 +1497,7 @@ body.scene-fade-in {
 
 @media (max-width: 600px) {
     .hamburger-hover-message {
-        font-size: 0.85rem;
+        font-size: 0.95rem; /* CHANGED: Increased from 0.85rem */
         white-space: normal; /* CHANGED: Allow wrapping on very small screens */
         max-width: 95%;
     }
@@ -1494,11 +1506,14 @@ body.scene-fade-in {
 /* Evolve Reference Scale */
 .evolve-reference-scale {
     position: fixed;
-    display: none;
+    display: flex;  /* CHANGED from 'none' - always flex, use visibility to hide */
     flex-direction: column;
     align-items: center;
     z-index: 1500;
     pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.3s ease;
     
     /* NEW: Animation for appearing */
     animation: scaleAppear 0.5s ease-out;
@@ -1528,7 +1543,7 @@ body.scene-fade-in {
 
 .scale-label {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.85rem;
+    font-size: 1.1rem; /* CHANGED: Increased from 0.85rem */
     font-weight: 300;
     letter-spacing: 0.05em;
     color: #C9FBFF;
@@ -1547,6 +1562,7 @@ body.scene-fade-in {
     text-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
 }
 
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .evolve-reference-scale {
@@ -1562,7 +1578,7 @@ body.scene-fade-in {
     width: 40px;
     height: 40px;
     
-    background: rgba(19, 25, 47, 0.8);
+    background: rgba(0, 20, 40, 0.8);
     border: 1px solid rgba(83, 211, 192, 0.3);
     border-radius: 50%;
     
@@ -1600,6 +1616,63 @@ body.scene-fade-in {
     pointer-events: none;
     cursor: not-allowed;
     transform: none !important;
+}
+
+/* Mode Tutorial Message - First-time help text */
+.mode-tutorial-message {
+    position: fixed;
+    top: 80px; /* CHANGED: Position at top, below tabs area */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4000;
+    
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 100;
+    color: #C9FBFF;
+    text-align: center;
+    letter-spacing: 0.05em;
+    
+    max-width: 90%;
+    width: auto;
+    padding: 0 20px;
+    
+    background: transparent;
+    border: none;
+    
+    text-shadow: 0 0 8px rgba(201, 251, 255, 0.3);
+    
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease; /* CHANGED: Faster transition (was 0.5s) */
+}
+
+.mode-tutorial-message.visible {
+    opacity: 1;
+    transition: opacity 0.5s ease; /* Slower fade-in */
+}
+
+.mode-tutorial-message.fade-out {
+    opacity: 0;
+    transition: opacity 0.2s ease; /* CHANGED: Even faster fade-out */
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .mode-tutorial-message {
+        font-size: 1rem;
+        top: 70px; /* CHANGED: Adjusted for smaller screens */
+        max-width: 95%;
+    }
+}
+
+@media (max-width: 600px) {
+    .mode-tutorial-message {
+        font-size: 0.95rem;
+        top: 65px; /* CHANGED: Adjusted for mobile */
+        max-width: 98%;
+        padding: 0 10px;
+    }
 }
 
 

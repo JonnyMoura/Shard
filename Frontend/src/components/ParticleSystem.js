@@ -753,7 +753,16 @@ export class ParticleSystem {
                     solid.userData.centerOffsetY = centerOffsetY;
                 }
                 const centerY = solid.position.y + centerOffsetY;
-                topY = centerY - clearance; 
+                const solidBottom = centerY - clearance;
+                const solidTop = centerY + clearance;
+                
+                // CHANGED: When solid is below ground, use TOP of solid as pillar endpoint
+                // When solid is above ground, use BOTTOM of solid as pillar endpoint
+                if (centerY < 0) {
+                    topY = solidTop;  // Dragging down: pillar extends to top of solid
+                } else {
+                    topY = solidBottom;  // Dragging up: pillar extends to bottom of solid
+                }
             }
         }
 
@@ -785,21 +794,25 @@ export class ParticleSystem {
 
                 if (this.evolvingActive && topY !== null) {
                     
-                    const baseY = (typeof peak.evolveBaseY === 'number')
-                        ? peak.evolveBaseY
-                        : (typeof this.evolveSessionBaseY === 'number' ? this.evolveSessionBaseY : 0);
-
-                    const range = Math.max(0.1, topY - baseY); // ensure positive
+                    // CHANGED: Particles form a pillar from ground (0) to the bottom of the solid (topY)
+                    // When solid is above 0: pillar goes from 0 up to topY
+                    // When solid is below 0: pillar goes from topY up to 0
+                    
+                    const groundY = 0;
+                    const minY = Math.min(groundY, topY);
+                    const maxY = Math.max(groundY, topY);
+                    
+                    const range = Math.max(0.1, maxY - minY);
                     
                     const noise = (
                         Math.sin(t * (0.18 + 0.25 * randomization[1]) + j * 0.2) * 0.12 +
                         Math.cos(t * (0.22 + 0.15 * randomization[2]) + j * 0.15) * 0.08
                     ) * range * 0.2;
 
-                    wanderHeight = baseY + heightFactor * range + noise;
-                    // Clamp strictly within [baseY, topY]
-                    if (wanderHeight > topY) wanderHeight = topY - 0.02;
-                    if (wanderHeight < baseY) wanderHeight = baseY + 0.02;
+                    wanderHeight = minY + heightFactor * range + noise;
+                    // Clamp strictly within [minY, maxY]
+                    if (wanderHeight > maxY) wanderHeight = maxY - 0.02;
+                    if (wanderHeight < minY) wanderHeight = minY + 0.02;
                 } else {
                     // Default main-screen behavior
                     wanderHeight = heightFactor * smoothedHeight
@@ -809,7 +822,7 @@ export class ParticleSystem {
 
                 const vagueTarget = new THREE.Vector3(
                     peak.currentPyramidCenter.x + wanderRadius * Math.cos(wanderAngle),
-                    Math.max(0.1, wanderHeight),
+                    wanderHeight,  // CHANGED: Removed Math.max(0.1, ...) - allow negative Y
                     peak.currentPyramidCenter.z + wanderRadius * Math.sin(wanderAngle)
                 );
 

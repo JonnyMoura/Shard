@@ -7,7 +7,7 @@ export function createGeometricSolid(solution, renderer, onMaterialReady) {
     console.log(`🎨 Creating solid for solution ${solution.id} with real parameters:`, audioParams);
     
     // CHANGED: More dramatic base radius variation (was 1.5-6.0, now 1.2-7.5)
-    const baseRadius = THREE.MathUtils.mapLinear(audioParams.room_size, 0.01, 0.4, 1.2, 7.5);
+    const baseRadius = THREE.MathUtils.mapLinear(audioParams.room_size, 0.01, 0.4, 1.5, 6.0);
     const geometry = new THREE.IcosahedronGeometry(2.5, 2);
 
     // --- Vertex welding with INCREASED deformation ---
@@ -31,9 +31,11 @@ export function createGeometricSolid(solution, renderer, onMaterialReady) {
         const pitchVarianceNormalized = (audioParams.pitch_variance + 0.05) / 0.1; // 0-1 range
         const spectralFluxNormalized = Math.min(descriptors.spectral_flux / 1700, 1); // 0-1 range
         
-        // CHANGED: Much more dramatic deformation (was 2.5 and 1.4, now 5.0 and 3.5)
-        const deform = (Math.random() - 0.5) * pitchVarianceNormalized * 4.0
-                     + (Math.random() - 0.5) * spectralFluxNormalized * 3.5;
+        // Pitch variance → outward displacement (positive), Spectral flux → inward displacement (negative)
+        const outwardDeform = (0.5 + Math.random() * 0.5) * pitchVarianceNormalized * 2.5;  // Reduced from 4.0
+        const inwardDeform = -(0.5 + Math.random() * 0.5) * spectralFluxNormalized * 1.5;   // Reduced from 3.5
+        // Clamp deformation to prevent extreme shrinking (min -0.8) or expansion (max 2.0)
+        const deform = Math.max(-0.8, Math.min(2.0, outwardDeform + inwardDeform));
         
         for (const idx of indices) {
             pos.setXYZ(idx, x + nx * deform, y + ny * deform, z + nz * deform);
@@ -104,8 +106,8 @@ export function createGeometricSolid(solution, renderer, onMaterialReady) {
         opacity: 0.6 + 0.3 * grainDurationNormalized,
         emissive: wireframeColor.clone().multiplyScalar(0.2),
         emissiveIntensity: 0.2 + grainDurationNormalized * 0.7 + pitchVarianceNormalized * 0.3,
-        metalness: 0.6 + overlapNormalized * 0.3,
-        roughness: 0.2 + (1 - wetLevelNormalized) * 0.5,
+        metalness: 0.6 + overlapNormalized * 0.4,
+        roughness: 0.2 + (1 - wetLevelNormalized) * 0.6,
         flatShading: false,
         fog: true,
         side: THREE.DoubleSide

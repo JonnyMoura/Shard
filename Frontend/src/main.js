@@ -15,6 +15,10 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 import './styles.css';
 
+// Camera movement key tracking
+const keysPressed = new Set();
+const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'shift']);
+
 // CRITICAL: Block ALL keyboard events completely (except Escape in modes)
 document.addEventListener('keydown', (e) => {
     // CRITICAL: Don't intercept if user is in ANY input field
@@ -74,7 +78,15 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     
-    // FIXED: In main scene, block ALL keys INCLUDING Escape
+    // Allow movement keys in main scene
+    const keyLower = e.key.toLowerCase();
+    if (movementKeys.has(keyLower)) {
+        keysPressed.add(keyLower);
+        e.preventDefault(); // Prevent scrolling for arrow keys
+        return;
+    }
+    
+    // Block other keys in main scene
     console.log('⌨️ BLOCKING key in main scene:', e.key);
     e.preventDefault();
     e.stopPropagation();
@@ -120,7 +132,14 @@ document.addEventListener('keyup', (e) => {
         return;
     }
     
-    // Block all keys in main scene
+    // Allow movement keys release in main scene
+    const keyLower = e.key.toLowerCase();
+    if (movementKeys.has(keyLower)) {
+        keysPressed.delete(keyLower);
+        return;
+    }
+    
+    // Block other keys in main scene
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -218,7 +237,8 @@ function createNavigationStructure() {
     const messages = {
         evolve: "Rate generated sounds based on your preferences to evolve new generations tailored to your taste",
         save: "Save your favorite sounds from the current generation to your personal library",
-        library: "Browse and manage all your saved sounds and combinations"
+        library: "Browse and manage all your saved sounds and combinations",
+        soundscape: "Play or stop the ambient soundscape" // NEW: Added soundscape message
     };
     
     // IMPROVED: Track current message for smooth transitions
@@ -848,6 +868,11 @@ function init() {
             setTimeout(() => {
                 loadingScreen.hide();
                 
+                // NEW: Hide submission loading indicator if visible
+                if (window.modeManager?.evolve?.hideSubmissionLoading) {
+                    window.modeManager.evolve.hideSubmissionLoading();
+                }
+                
                 // Create soundscape toggle button (only first time)
                 if (!initialDataReceived) {
                     initialDataReceived = true;
@@ -987,6 +1012,14 @@ function init() {
                 if (name === 'library' && !this.library?.inSpace) {
                     await Promise.resolve(this.library.enterSpace());
                 }
+                
+                // NEW: Show tutorial message for first-time mode entry
+                if (name && window.modeTutorialSystem) {
+                    // Delay slightly to let mode UI settle
+                    setTimeout(() => {
+                        window.modeTutorialSystem.show(name);
+                    }, 800);
+                }
             } catch (err) {
                 console.warn(`Failed to enter mode "${name}"`, err);
             }
@@ -999,6 +1032,11 @@ function init() {
             this._locked = true;
 
             window.__modeTransitioning = true;
+            
+            // NEW: Hide tutorial message immediately when changing modes
+            if (window.modeTutorialSystem) {
+                window.modeTutorialSystem.hide();
+            }
 
             const wasTargetActive = name ? this.isActive(name) : false;
             const activeBefore = ['evolve', 'save', 'library'].filter(mode => this.isActive(mode));
@@ -1140,6 +1178,59 @@ function init() {
     animate();
 }
 
+// Camera movement with WASD/Arrow keys
+function updateCameraMovement() {
+    // Only move in main scene (not in special modes)
+    const isSaveMode = window.modeManager?.isActive('save');
+    const isEvolveMode = window.modeManager?.isActive('evolve');
+    const isLibraryMode = window.modeManager?.isActive('library');
+    
+    if (isSaveMode || isEvolveMode || isLibraryMode) return;
+    if (keysPressed.size === 0) return;
+    
+    const moveSpeed = 0.5;
+    const direction = new THREE.Vector3();
+    
+    // Get camera's forward and right vectors (on XZ plane)
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    
+    // Calculate movement direction based on pressed keys
+    if (keysPressed.has('w') || keysPressed.has('arrowup')) {
+        direction.add(forward);
+    }
+    if (keysPressed.has('s') || keysPressed.has('arrowdown')) {
+        direction.sub(forward);
+    }
+    if (keysPressed.has('a') || keysPressed.has('arrowleft')) {
+        direction.sub(right);
+    }
+    if (keysPressed.has('d') || keysPressed.has('arrowright')) {
+        direction.add(right);
+    }
+    
+    // Vertical movement (space = up, shift = down)
+    const up = new THREE.Vector3(0, 1, 0);
+    if (keysPressed.has(' ')) {
+        direction.add(up);
+    }
+    if (keysPressed.has('shift')) {
+        direction.sub(up);
+    }
+    
+    // Apply movement
+    if (direction.length() > 0) {
+        direction.normalize().multiplyScalar(moveSpeed);
+        camera.position.add(direction);
+        controls.target.add(direction);
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -1148,6 +1239,8 @@ function animate() {
         return;
     }
 
+    // Update camera movement from keyboard
+    updateCameraMovement();
     
     particleSystem.update(staticFrequencyData);
 
@@ -1474,6 +1567,20 @@ function createSoundscapeToggle(surroundController) {
     window.addEventListener('surround-playback-state', stateHandler);
 
     document.body.appendChild(btn);
+    
+    // NEW: Add hover events for showing message
+    btn.addEventListener('mouseenter', () => {
+        if (window.navigationContainers?.hoverMessage) {
+            window.navigationContainers.hoverMessage.show('soundscape');
+        }
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+        if (window.navigationContainers?.hoverMessage) {
+            window.navigationContainers.hoverMessage.hide();
+        }
+    });
+    
     return btn;
 }
 
@@ -1586,7 +1693,11 @@ function createTitleScreen() {
     window.addEventListener('resize', resizeHandler);
     
     // Remove title screen on any click/key
+    let titleScreenRemoved = false; // Guard to prevent double initialization
     const removeTitleScreen = () => {
+        if (titleScreenRemoved) return; // Prevent calling twice
+        titleScreenRemoved = true;
+        
         titleScreen.classList.add('fade-out');
         
         // Start main scene initialization earlier (while title is still fading)
@@ -1608,3 +1719,85 @@ function createTitleScreen() {
 
 // Initialize the application
 createTitleScreen();
+
+// Mode Tutorial System - Shows first-time help messages
+const modeTutorialSystem = {
+    // Track which modes have shown their tutorial
+    shownModes: new Set(),
+    
+    // Tutorial messages for each mode
+    messages: {
+        save: "Click on sounds to select them, then save them individually or as a combination to your library",
+        evolve: "Drag sounds up or down to rate them — higher means better. Switch categories using the tabs above, then submit your ratings",
+        library: "Browse your saved sounds. Click on one to see details, play it, or export it"
+    },
+    
+    // Duration to show message (ms)
+    displayDuration: 6000,
+    
+    // Current timeout reference
+    _timeout: null,
+    _element: null,
+    
+    // Initialize the tutorial element
+    init() {
+        if (this._element) return;
+        
+        this._element = document.createElement('div');
+        this._element.className = 'mode-tutorial-message';
+        document.body.appendChild(this._element);
+    },
+    
+    // Show tutorial for a mode (only on first open)
+    show(modeName) {
+        if (!modeName || this.shownModes.has(modeName)) return;
+        if (!this.messages[modeName]) return;
+        
+        this.init();
+        
+        // Mark as shown
+        this.shownModes.add(modeName);
+        
+        // Clear any existing timeout
+        if (this._timeout) {
+            clearTimeout(this._timeout);
+            this._timeout = null;
+        }
+        
+        // Set message and show
+        this._element.textContent = this.messages[modeName];
+        this._element.classList.remove('fade-out');
+        
+        // Small delay to ensure CSS transition works
+        requestAnimationFrame(() => {
+            this._element.classList.add('visible');
+        });
+        
+        // Auto-hide after duration
+        this._timeout = setTimeout(() => {
+            this.hide();
+        }, this.displayDuration);
+    },
+    
+    // Hide the tutorial message
+    hide() {
+        if (!this._element) return;
+        
+        this._element.classList.add('fade-out');
+        this._element.classList.remove('visible');
+        
+        if (this._timeout) {
+            clearTimeout(this._timeout);
+            this._timeout = null;
+        }
+    },
+    
+    // Reset tracking (useful for testing)
+    reset() {
+        this.shownModes.clear();
+        this.hide();
+    }
+};
+
+// Expose globally
+window.modeTutorialSystem = modeTutorialSystem;
