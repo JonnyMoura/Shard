@@ -1,0 +1,110 @@
+/* Hamburger Menu Styles */
+.hamburger-menu {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 3000;
+    pointer-events: auto;
+}
+
+.hamburger-button {
+    width: 48px;
+    height: 48px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.2s ease, opacity 0.3s ease;
+    border-radius: 50%;
+    pointer-events: auto;
+}
+
+.hamburger-button img {
+    width: 100%;
+    height: 100%;
+    filter: brightness(0) saturate(100%) invert(93%) sepia(14%) saturate(1048%) hue-rotate(154deg) brightness(103%) contrast(100%) drop-shadow(0 0 4px rgba(var(--color-cyan-rgb), 0.4));
+}
+
+.hamburger-button:hover {
+    transform: scale(1.1);
+}
+
+.hamburger-button:hover img {
+    filter: brightness(0.4) saturate(100%) invert(97%) sepia(20%) saturate(1400%) hue-rotate(154deg) brightness(115%) contrast(108%) drop-shadow(0 0 16px rgba(var(--color-cyan-rgb), 0.4));
+}
+
+
+
+.hamburger-line {
+    width: 18px;
+    height: 2px;
+    background-color: var(--color-cyan); /* CHANGED: Match soundscape cyan color */
+    transition: all 0.3s ease;
+    transform-origin: center;
+    box-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.4); /* CHANGED: Match cyan glow */
+}
+
+/* NEW: Add hover effect matching soundscape */
+.hamburger-button:hover .hamburger-line {
+    /* More aggressive brightness boost - same as soundscape button */
+    filter: brightness(1.5) drop-shadow(0 0 8px rgba(var(--color-cyan-rgb), 0.9));
+}
+
+.hamburger-button.open .hamburger-line:nth-child(1),
+.hamburger-button.open .hamburger-line:nth-child(2),
+.hamburger-button.open .hamburger-line:nth-child(3) {
+    transform: none;
+    opacity: 1;
+}
+
+.hamburger-button.open .hamburger-line {
+    box-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.5); /* CHANGED: Cyan glow when open */
+}
+
+.hamburger-options {
+    position: absolute;
+    top: 64px;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3%;
+    padding: 2%;
+    min-width: 150px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-2%);
+    transition: all 0.3s ease;
+}
+
+.hamburger-options.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.hamburger-options .main-screen-btn {
+    margin: 0;
+    padding: 2% 0;
+    text-align: left;
+    font-size: 1.1em;
+    white-space: nowrap;
+    color: var(--color-cyan); /* CHANGED: Match cyan color */
+    text-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.3); /* CHANGED: Add cyan glow */
+    transition: all 0.2s ease; /* NEW: Add transition */
+}
+
+/* NEW: Unified hover effect matching soundscape button */
+.hamburger-options .main-screen-btn:hover {
+    color: var(--color-cyan);
+    text-shadow: 0 0 2px rgba(var(--color-cyan-rgb), 0.7), /* Bright cyan glow */
+                 0 0 12px rgba(var(--color-cyan-rgb), 0.4); /* Extended glow */
+    filter: brightness(1.5);
+    transform: translateX(4px); /* Subtle slide on hover */
+}
+
+.hamburger-options .main-screen-btn::after {
+    display: none;
+}

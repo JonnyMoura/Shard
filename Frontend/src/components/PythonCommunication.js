@@ -1,7 +1,3 @@
-import * as THREE from 'three';
-
-
-
 export class PythonCommunication {
     constructor(particleSystem, onGenerationData = null, onConnectionReady = null, onRegenerationStart = null) {
         console.log('🐍 Initializing Python Communication...');

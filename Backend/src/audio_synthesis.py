@@ -1,11 +1,11 @@
+import os
 import numpy as np
 import soundfile as sf
 import random
 from pedalboard import Gain,Reverb, HighpassFilter, LowpassFilter, LadderFilter, Compressor,Chorus,Distortion
 import librosa
-import json
-import matplotlib.pyplot as plt
-import scipy.stats
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 def grain_envelope(size,shape):
     if shape == 'smooth':
@@ -32,8 +32,7 @@ def generate_grain(source, start, duration, sample_rate, pitch=1.0):
     if grain_size < 64:  
         grain_size = 64
 
-    time_line = np.linspace(0, 1, grain_size)
-    sample_indices = start_idx + time_line * pitch * sample_rate
+    sample_indices = start_idx + np.arange(grain_size, dtype=np.float64) * pitch
     sample_indices = np.clip(sample_indices, 0, len(source) - 1)
     grain = np.interp(sample_indices, np.arange(len(source)), source)
     env = grain_envelope(grain_size,shape='smooth')  
@@ -124,7 +123,6 @@ def rhythmic_quantization(audio, sample_rate, bpm=120):
     samples_per_sixteenth = samples_per_beat // 4  
     
     total_samples = len(audio)
-    rhythm_envelope = np.ones(total_samples)
     
     rhythmic_patterns = [
         [1.0, 0.3, 0.7, 0.2],  
@@ -135,43 +133,58 @@ def rhythmic_quantization(audio, sample_rate, bpm=120):
     ]
     
     pattern = random.choice(rhythmic_patterns)
-    pattern_length = len(pattern)
-    
-    for i in range(0, total_samples, samples_per_sixteenth):
-        pattern_index = (i // samples_per_sixteenth) % pattern_length
-        base_gate = pattern[pattern_index]
-        
-        gate_probability = base_gate * random.uniform(0.8, 1.2)
-        gate_probability = np.clip(gate_probability, 0.05, 1.0)  
-        
-        gate_length = min(samples_per_sixteenth, total_samples - i)
-        
-        for j in range(gate_length):
-            if j < gate_length // 8:  
-                fade = (j / (gate_length // 8)) ** 2 
-                rhythm_envelope[i + j] = fade * gate_probability + (1 - fade) * 0.1
-            elif j > gate_length * 7 // 8:  
-                fade = ((gate_length - j) / (gate_length // 8)) ** 1.5
-                rhythm_envelope[i + j] = fade * gate_probability + (1 - fade) * 0.1
-            else:  
-                rhythm_envelope[i + j] = 0.9 * gate_probability  
-    
-    punch_envelope = np.ones(total_samples)
-    for i in range(0, total_samples, samples_per_sixteenth):
-        gate_length = min(samples_per_sixteenth, total_samples - i)
-        attack_length = min(gate_length // 6, 512)  
-        
-        for j in range(attack_length):
-            if i + j < total_samples:
-                boost_factor = max(1.0, 1.3 * (1.0 - j / attack_length))  
-                punch_envelope[i + j] = boost_factor
-    
-    final_envelope = rhythm_envelope * punch_envelope
+    step_count = (total_samples + samples_per_sixteenth - 1) // samples_per_sixteenth
+    gate_probabilities = np.array([
+        np.clip(
+            pattern[index % len(pattern)] * random.uniform(0.8, 1.2),
+            0.05,
+            1.0,
+        )
+        for index in range(step_count)
+    ], dtype=np.float32)
+    sample_indices = np.arange(total_samples)
+    step_indices = sample_indices // samples_per_sixteenth
+    within_step = sample_indices % samples_per_sixteenth
+    step_lengths = np.minimum(
+        samples_per_sixteenth,
+        total_samples - step_indices * samples_per_sixteenth,
+    )
+    gate_lengths = step_lengths // 8
+    rhythm_envelope = 0.9 * gate_probabilities[step_indices]
+
+    attack = (gate_lengths > 0) & (within_step < gate_lengths)
+    attack_progress = np.zeros(total_samples, dtype=np.float32)
+    attack_progress[attack] = within_step[attack] / gate_lengths[attack]
+    rhythm_envelope[attack] = (
+        attack_progress[attack] ** 2 * gate_probabilities[step_indices[attack]]
+        + (1 - attack_progress[attack] ** 2) * 0.1
+    )
+
+    release = (gate_lengths > 0) & (within_step > step_lengths * 7 // 8)
+    release_progress = np.zeros(total_samples, dtype=np.float32)
+    release_progress[release] = (
+        step_lengths[release] - within_step[release]
+    ) / gate_lengths[release]
+    rhythm_envelope[release] = (
+        release_progress[release] ** 1.5 * gate_probabilities[step_indices[release]]
+        + (1 - release_progress[release] ** 1.5) * 0.1
+    )
+
+    attack_lengths = np.minimum(step_lengths // 6, 512)
+    punch = np.ones(total_samples, dtype=np.float32)
+    punch_mask = (attack_lengths > 0) & (within_step < attack_lengths)
+    punch[punch_mask] = np.maximum(
+        1.0,
+        1.3 * (1.0 - within_step[punch_mask] / attack_lengths[punch_mask]),
+    )
+    final_envelope = rhythm_envelope * punch
     
     # CHANGED: Apply to mono audio directly (no need for newaxis)
     return audio * final_envelope
     
-def generate_audio_stream(params, duration, sources=None, sample_rates=None, category=None):
+def generate_audio_stream(
+    params, duration, sources=None, category=None, target_sample_rate=None
+):
     
     grain_duration, overlap, pitch_variance, start_offset_range, room_size, damping, wet_level, num_voices, low_cutoff_hz, high_cutoff_hz, ladder_resonance = params
     
@@ -179,33 +192,45 @@ def generate_audio_stream(params, duration, sources=None, sample_rates=None, cat
         low_cutoff_hz, high_cutoff_hz = high_cutoff_hz, low_cutoff_hz
     
     if sources is None:
-        sources = ['../data/musica.wav']
+        audio_dir = os.path.join(DATA_DIR, "audio")
+        if os.path.isdir(audio_dir):
+            audio_files = [
+                name
+                for name in sorted(os.listdir(audio_dir))
+                if name.lower().endswith((".wav", ".mp3", ".ogg", ".flac"))
+            ]
+            sources = [os.path.join(audio_dir, audio_files[0])] if audio_files else []
+        else:
+            sources = []
 
     loaded_sources = []
-    sample_rate = None
+    sample_rate = target_sample_rate
     
     for source_path in sources:
         try:
-            source, sr = sf.read(source_path)
+            source, sr = sf.read(source_path, dtype="float32")
             if source.ndim > 1:
-                source = np.mean(source, axis=1)  # Convert to mono
-            loaded_sources.append(source)
+                source = np.mean(source, axis=1, dtype=np.float32)
             if sample_rate is None:
                 sample_rate = sr
+            elif sr != sample_rate:
+                source = librosa.resample(
+                    source, orig_sr=sr, target_sr=sample_rate
+                ).astype(np.float32, copy=False)
+            loaded_sources.append(source)
         except Exception as e:
             print(f"Warning: Could not load {source_path}: {e}")
             continue
     
     if not loaded_sources:
-        # Fallback to default
-        first_source, sample_rate = sf.read('../data/musica.wav')
-        if first_source.ndim > 1:
-            first_source = np.mean(first_source, axis=1)
-        loaded_sources = [first_source]
+        raise FileNotFoundError("No readable audio sources were provided or found in data/audio.")
     
+    if duration <= 0 or grain_duration <= 0 or overlap <= 0 or num_voices <= 0:
+        raise ValueError("duration, grain_duration, overlap, and num_voices must be positive")
+
     buffer_size = int(sample_rate * duration)
     # CHANGED: Create mono buffer instead of stereo
-    grain_buffer = np.zeros(buffer_size)  # Single channel instead of (buffer_size, 2)
+    grain_buffer = np.zeros(buffer_size, dtype=np.float32)
     current_position = 0
     
     reverb = Reverb()
@@ -272,21 +297,16 @@ def generate_audio_stream(params, duration, sources=None, sample_rates=None, cat
     ladder_cutoff = np.clip((low_cutoff_hz + high_cutoff_hz) / 2, 200, 8000)
     ladder = LadderFilter(cutoff_hz=ladder_cutoff, resonance=ladder_resonance)
     filtered = ladder(filtered, sample_rate)
-    
-    filtered = np.nan_to_num(filtered)
 
-    # Normalize
-   
-   
+    filtered = np.nan_to_num(filtered, nan=0.0, posinf=0.0, neginf=0.0)
     if category:
         filtered = category_processing(filtered, sample_rate, category)
-    
-    if np.isnan(filtered).any() or np.isinf(filtered).any():
-        print("WARNING: Found NaN or Inf values in audio, replacing with zeros")
-        filtered = np.nan_to_num(filtered, nan=0.0, posinf=0.0, neginf=0.0)
 
-    
-    
+    filtered = np.nan_to_num(filtered, nan=0.0, posinf=0.0, neginf=0.0)
+    peak = np.max(np.abs(filtered))
+    if peak > 0.99:
+        filtered = filtered * (0.99 / peak)
+
     return filtered, sample_rate  # Returns mono audio
 
 ###Function to extract multiple audio descriptors from an audio signal

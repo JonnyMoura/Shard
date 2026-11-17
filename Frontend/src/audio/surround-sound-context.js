@@ -1,6 +1,13 @@
 export class SurroundContext {
   constructor(w, roomWidth, roomHeight, roomDepth) {
     this.actx = new (w.AudioContext || w.webkitAudioContext)();
+    this.analyser = this.actx.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.8;
+    this.analyserSink = this.actx.createGain();
+    this.analyserSink.gain.value = 0;
+    this.analyser.connect(this.analyserSink);
+    this.analyserSink.connect(this.actx.destination);
     
     // Store room dimensions (Three.js: X=width, Y=height, Z=depth)
     this.roomWidth = roomWidth;
@@ -40,7 +47,9 @@ export class SurroundContext {
   }
   
   createSource(x = 0, y = 0, z = 0, spatial = true) {
-    return new SpatialSource(this.actx, x, y, z, this.longestSide, spatial);
+    return new SpatialSource(
+      this.actx, x, y, z, this.longestSide, spatial, this.analyser
+    );
   }
   
   setListenerPosition(x, y, z) {
@@ -72,7 +81,7 @@ export class SurroundContext {
 }
 
 class SpatialSource {
-  constructor(audioContext, x, y, z, longestSide, spatial = true) {
+  constructor(audioContext, x, y, z, longestSide, spatial = true, analyser) {
     this.ctx = audioContext;
     this.longestSide = longestSide;
     this.isSpatial = spatial;
@@ -102,6 +111,7 @@ class SpatialSource {
       this.gainNode.connect(this.ctx.destination);
       this.pannerNode = null;
     }
+    this.gainNode.connect(analyser);
     
     // Natural gain (no boost)
     this.gainNode.gain.setValueAtTime(1.0, this.ctx.currentTime);

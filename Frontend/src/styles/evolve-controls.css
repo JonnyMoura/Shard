@@ -1,0 +1,245 @@
+/* Floating Evolve Tabs Container */
+.evolve-tabs-floating {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    flex-direction: row;
+    gap: 10px;
+    z-index: 1000;
+
+    padding: 10px;
+    border-radius: 25px;
+
+}
+
+/* Evolve Tab Button */
+.evolve-tab-button {
+    padding: 8px 16px;
+    background: transparent;
+    color: var(--color-cyan); /* CHANGED: Match cyan color */
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.2); /* CHANGED: Cyan border */
+    border-radius: 15px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.3); /* CHANGED: Cyan glow */
+}
+
+.evolve-tab-button.active,
+.evolve-tab-button.selected {
+    background: rgba(var(--color-cyan-rgb), 0.15); /* CHANGED: Cyan highlight */
+    border-color: rgba(var(--color-cyan-rgb), 0.4);
+    box-shadow: 0 0 12px rgba(var(--color-cyan-rgb), 0.2);
+}
+
+.evolve-tab-button:hover {
+    background: rgba(var(--color-cyan-rgb), 0.1);
+    color: var(--color-cyan);
+    border-color: rgba(var(--color-cyan-rgb), 0.4);
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.6),
+                 0 0 12px rgba(var(--color-cyan-rgb), 0.4);
+    filter: brightness(1.3);
+    transform: translateY(-2px);
+}
+
+/* Evolving Submit Button */
+.evolving-submit-button {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    background: transparent;
+    color: var(--color-cyan); /* Cyan text */
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.4); /* Cyan border */
+    border-radius: 25px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 1000;
+    text-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.3); /* Cyan glow */
+}
+
+.evolving-submit-button.enabled {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.evolving-submit-button:hover {
+    background: rgba(var(--color-cyan-rgb), 0.1) !important; /* Cyan hover background */
+    border-color: rgba(var(--color-cyan-rgb), 0.6) !important; /* Brighter cyan border */
+    color: var(--color-cyan) !important;
+
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.6), /* CHANGED: Brighter cyan glow */
+                 0 0 12px rgba(var(--color-cyan-rgb), 0.4);
+    transform: translateX(-50%) translateY(-2px) !important; /* Lift effect */
+
+}
+
+.evolving-submit-button:active {
+    transform: translateX(-50%) translateY(0px) !important;
+    box-shadow: 0 2px 8px rgba(var(--color-cyan-rgb), 0.2) !important;
+}
+
+/* Update the .evolve-category-btn styles (around line 1230) */
+
+.evolve-category-btn.evolving {
+    background: linear-gradient(135deg, rgba(var(--color-cyan-rgb), 0.2) 0%, rgba(var(--color-cyan-rgb), 0.1) 100%); /* CHANGED: Cyan gradient */
+    cursor: wait;
+    opacity: 0.7;
+    animation: evolvingPulse 1.5s ease-in-out infinite;
+    border-color: rgba(var(--color-cyan-rgb), 0.4);
+}
+
+.evolve-category-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+@keyframes evolvingPulse {
+    0%, 100% {
+        opacity: 0.7;
+        box-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.2); /* NEW: Pulsing cyan glow */
+    }
+    50% {
+        opacity: 0.9;
+        box-shadow: 0 0 16px rgba(var(--color-cyan-rgb), 0.4);
+    }
+}
+
+/* Update the already-saved message styling */
+.name-input-widget p {
+    font-size: 1em;
+    color: var(--color-cyan); /* Cyan text instead of #e8f0ff */
+    margin-bottom: 20px;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-weight: 300;
+    letter-spacing: 0.02em;
+}
+
+.name-input-widget p strong {
+    color: var(--color-mint); /* Green from palette instead of #00ffaa */
+    font-size: 1.1em;
+    font-weight: 500;
+    text-shadow: 0 0 8px rgba(var(--color-mint-rgb), 0.4); /* Green glow */
+}
+
+.library-space-panel.editing-active {
+    padding-bottom: 140px;
+}
+
+.library-name {
+    font-family: var(--font-ui);
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--color-cyan);
+    margin: 0 0 8px 0;
+    text-shadow: 0 0 12px rgba(var(--color-cyan-rgb), 0.3);
+    word-break: break-word;       /* NEW */
+    white-space: normal;          /* NEW */
+    max-width: 100%;              /* NEW */
+    line-height: 1.2;             /* NEW */
+}
+
+.library-space-panel.editing-name .library-name {
+    margin-bottom: 40px;
+}
+
+.library-name-edit {
+    font-family: var(--font-ui);
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--color-cyan);
+    background: rgba(var(--color-navy-rgb), 0.9);
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.4);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 0 0 24px 0;
+    text-shadow: 0 0 12px rgba(var(--color-cyan-rgb), 0.3);
+
+    transition: all 0.3s ease;
+}
+
+.library-name-edit:focus {
+    outline: none;
+    border-color: rgba(var(--color-cyan-rgb), 0.6);
+    box-shadow: 0 0 18px rgba(var(--color-cyan-rgb), 0.35);
+    background: rgba(var(--color-navy-rgb), 1);
+}
+
+.library-description-edit {
+    width: 100%;
+    min-height: 6.5em;
+    padding: 14px 16px;
+    background: rgba(var(--color-navy-rgb), 0.9);
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.35);
+    border-radius: 12px;
+    font-family: var(--font-ui);
+    font-size: 1rem;
+    color: var(--color-cyan);
+    resize: vertical;
+    line-height: 1.6;
+
+    transition: all 0.3s ease;
+    margin-bottom: 28px;
+}
+
+.library-description-edit:focus {
+    outline: none;
+    border-color: rgba(var(--color-cyan-rgb), 0.6);
+    box-shadow: 0 0 18px rgba(var(--color-cyan-rgb), 0.35);
+    background: rgba(var(--color-navy-rgb), 1);
+}
+
+.library-description.committed {
+    font-style: normal;
+}
+
+
+
+.submission-message {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9000;
+
+    font-family: var(--font-ui);
+    font-size: 1.1rem;
+    font-weight: 300;
+    text-align: center;
+    letter-spacing: 0.05em;
+
+    max-width: 800px;
+    width: 90%;
+    padding: 20px 40px;
+
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+.submission-message.visible {
+    opacity: 1;
+}
+
+.submission-message.error {
+    color: var(--color-danger);
+    text-shadow: 0 0 10px rgba(var(--color-danger-rgb), 0.3);
+}
+
+.submission-message.success {
+    color: var(--color-mint);
+    text-shadow: 0 0 10px rgba(var(--color-mint-rgb), 0.3);
+}

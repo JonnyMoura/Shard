@@ -7,6 +7,11 @@ import { Library } from './components/Library';
 import { PythonCommunication } from './components/PythonCommunication.js';
 import { SurroundController } from './audio/SurroundController.js';
 import { LoadingScreen } from './components/LoadingScreen.js';
+import { installKeyboardControls, keysPressed } from './components/KeyboardControls.js';
+import { createNavigationStructure } from './components/Navigation.js';
+import { createTitleScreen } from './components/TitleScreen.js';
+import { createModeTutorialSystem } from './components/ModeTutorialSystem.js';
+import { playIcon, stopIcon } from './assets.js';
 
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -14,387 +19,23 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 import './styles.css';
-
-// Camera movement key tracking
-const keysPressed = new Set();
-const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'shift']);
-
-// CRITICAL: Block ALL keyboard events completely (except Escape in modes)
-document.addEventListener('keydown', (e) => {
-    // CRITICAL: Don't intercept if user is in ANY input field
-    const activeEl = document.activeElement;
-    const isInInput = activeEl && (
-        activeEl.tagName === 'INPUT' || 
-        activeEl.tagName === 'TEXTAREA' || 
-        activeEl.isContentEditable ||
-        activeEl.closest('input') ||
-        activeEl.closest('textarea')
-    );
-    
-    if (isInInput) {
-        console.log('⌨️ Allowing input field:', activeEl.tagName);
-        return; // Let input fields work normally
-    }
-    
-    // Block ALL keys during mode transitions
-    if (window.__modeTransitioning) {
-        console.log('⌨️ BLOCKING ALL KEYS during transition:', e.key);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // FIXED: Check if in special mode using modeManager instead of text
-    const isSaveMode = window.modeManager?.isActive('save');
-    const isEvolveMode = window.modeManager?.isActive('evolve');
-    const isLibraryMode = window.modeManager?.isActive('library');
-    const isAnyMode = isSaveMode || isEvolveMode || isLibraryMode;
-    
-    if (isAnyMode) {
-        // FIXED: Only handle Escape key in modes
-        if (e.key === 'Escape') {
-            console.log('⌨️ Escape pressed - exiting mode');
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            
-            // Determine which mode to exit
-            if (isSaveMode) {
-                window.modeManager?.goTo('save');
-            } else if (isEvolveMode) {
-                window.modeManager?.goTo('evolve');
-            } else if (isLibraryMode) {
-                window.modeManager?.goTo('library');
-            }
-            return;
-        }
-        
-        // Block everything else
-        console.log('⌨️ BLOCKING key in mode:', e.key);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // Allow movement keys in main scene
-    const keyLower = e.key.toLowerCase();
-    if (movementKeys.has(keyLower)) {
-        keysPressed.add(keyLower);
-        e.preventDefault(); // Prevent scrolling for arrow keys
-        return;
-    }
-    
-    // Block other keys in main scene
-    console.log('⌨️ BLOCKING key in main scene:', e.key);
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-}, true); // Use capture phase
-
-// CRITICAL: Block keyup as well
-document.addEventListener('keyup', (e) => {
-    const activeEl = document.activeElement;
-    const isInInput = activeEl && (
-        activeEl.tagName === 'INPUT' || 
-        activeEl.tagName === 'TEXTAREA' || 
-        activeEl.isContentEditable
-    );
-    
-    if (isInInput) return;
-    
-    if (window.__modeTransitioning) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // FIXED: Use modeManager instead of text
-    const isSaveMode = window.modeManager?.isActive('save');
-    const isEvolveMode = window.modeManager?.isActive('evolve');
-    const isLibraryMode = window.modeManager?.isActive('library');
-    const isAnyMode = isSaveMode || isEvolveMode || isLibraryMode;
-    
-    if (isAnyMode) {
-        // FIXED: Only allow Escape keyup in modes (block all others)
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return;
-        }
-        
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // Allow movement keys release in main scene
-    const keyLower = e.key.toLowerCase();
-    if (movementKeys.has(keyLower)) {
-        keysPressed.delete(keyLower);
-        return;
-    }
-    
-    // Block other keys in main scene
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-}, true);
-
-// CRITICAL: Block keypress as well
-document.addEventListener('keypress', (e) => {
-    const activeEl = document.activeElement;
-    const isInInput = activeEl && (
-        activeEl.tagName === 'INPUT' || 
-        activeEl.tagName === 'TEXTAREA' || 
-        activeEl.isContentEditable
-    );
-    
-    if (isInInput) return;
-    
-    if (window.__modeTransitioning) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // FIXED: Use modeManager instead of text
-    const isSaveMode = window.modeManager?.isActive('save');
-    const isEvolveMode = window.modeManager?.isActive('evolve');
-    const isLibraryMode = window.modeManager?.isActive('library');
-    const isAnyMode = isSaveMode || isEvolveMode || isLibraryMode;
-    
-    if (isAnyMode) {
-        // FIXED: Block keypress for Escape (doesn't fire action, just prevents default)
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return;
-        }
-        
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return;
-    }
-    
-    // Block all keys in main scene
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-}, true);
+installKeyboardControls();
 
 let scene, camera, renderer, particleSystem, controls;
 let composer, bloomPass, grainPass;
 let staticFrequencyData;
+let surroundController;
 let saveMode;
 let loadingScreen;
-// NEW
-let tutorial;
-let tutorialShown = false;
-
-
-
+let lastAnimationTime = 0;
+let animationAccumulator = 0;
+const PHYSICS_STEP = 1 / 60;
 // Materials for selective bloom
 const BLOOM_SCENE = 1;
 const bloomLayer = new THREE.Layers();
 bloomLayer.set(BLOOM_SCENE);
 
 
-
-function createNavigationStructure() {
-    // Create hamburger menu container
-    const hamburgerContainer = document.createElement('div');
-    hamburgerContainer.className = 'hamburger-menu';
-    
-    // Create hamburger button
-    const hamburgerButton = document.createElement('button');
-    hamburgerButton.className = 'hamburger-button';
-    hamburgerButton.innerHTML = `
-        <img src="/assets/icons/hamburger-menu.svg" alt="Menu" />
-    `;
-    
-    // Create options container
-    const optionsContainer = document.createElement('div');
-    optionsContainer.className = 'hamburger-options';
-    
-    hamburgerContainer.appendChild(hamburgerButton);
-    hamburgerContainer.appendChild(optionsContainer);
-    document.body.appendChild(hamburgerContainer);
-    
-    // NEW: Create hover message element
-    const hoverMessage = document.createElement('div');
-    hoverMessage.className = 'hamburger-hover-message';
-    document.body.appendChild(hoverMessage);
-    
-    // NEW: Define messages for each option
-    const messages = {
-        evolve: "Rate generated sounds based on your preferences to evolve new generations tailored to your taste",
-        save: "Save your favorite sounds from the current generation to your personal library",
-        library: "Browse and manage all your saved sounds and combinations",
-        soundscape: "Play or stop the ambient soundscape" // NEW: Added soundscape message
-    };
-    
-    // IMPROVED: Track current message for smooth transitions
-    let currentMessage = '';
-    let isTransitioning = false;
-    
-    // IMPROVED: Function to show/hide hover message with smooth transitions
-    const showHoverMessage = (mode) => {
-        const mm = window.modeManager;
-        const anyModeActive = mm?.isActive('save') || mm?.isActive('evolve') || mm?.isActive('library');
-        if (anyModeActive) {
-            hideHoverMessage();
-            return;
-        }
-        
-        if (messages[mode]) {
-            const newMessage = messages[mode];
-            
-            // If same message, just keep it visible
-            if (currentMessage === newMessage && hoverMessage.classList.contains('visible')) {
-                return;
-            }
-            
-            // If different message is showing, fade out then fade in with new message
-            if (currentMessage !== newMessage && hoverMessage.classList.contains('visible')) {
-                if (isTransitioning) return; // Prevent overlapping transitions
-                
-                isTransitioning = true;
-                
-                // Fade out current message
-                hoverMessage.classList.remove('visible');
-                
-                // Wait for fade out to complete, then update and fade in
-                setTimeout(() => {
-                    hoverMessage.textContent = newMessage;
-                    currentMessage = newMessage;
-                    hoverMessage.classList.add('visible');
-                    
-                    setTimeout(() => {
-                        isTransitioning = false;
-                    }, 400); // Match CSS transition time
-                }, 400); // Match CSS transition time
-            } else {
-                // No message showing, just show new one
-                hoverMessage.textContent = newMessage;
-                currentMessage = newMessage;
-                hoverMessage.classList.add('visible');
-            }
-        }
-    };
-    
-    const hideHoverMessage = () => {
-        hoverMessage.classList.remove('visible');
-        
-        // Clear current message after fade completes
-        setTimeout(() => {
-            if (!hoverMessage.classList.contains('visible')) {
-                currentMessage = '';
-                isTransitioning = false;
-            }
-        }, 400); // Match CSS transition time
-    };
-    
-    // Store reference for adding hover listeners to menu items
-    window.navigationContainers = {
-        hamburgerMenu: optionsContainer,
-        hoverMessage: {
-            show: showHoverMessage,
-            hide: hideHoverMessage
-        },
-        topLeft: document.createElement('div'),
-        topRight: document.createElement('div'),
-        bottomLeft: document.createElement('div'),
-        bottomRight: document.createElement('div')
-    };
-    
-    // Toggle menu functionality
-    let isMenuOpen = false;
-    hamburgerButton.addEventListener('click', () => {
-        isMenuOpen = !isMenuOpen;
-        hamburgerButton.classList.toggle('open', isMenuOpen);
-        optionsContainer.classList.toggle('open', isMenuOpen);
-        
-        // Hide message when menu closes
-        if (!isMenuOpen) {
-            hideHoverMessage();
-        }
-    });
-    
-    document.addEventListener('click', (e) => {
-        if (!hamburgerContainer.contains(e.target) && isMenuOpen) {
-            const isSaveModeActive = window.modeManager?.isActive('save');
-            
-            if (!isSaveModeActive) {
-                isMenuOpen = false;
-                hamburgerButton.classList.remove('open');
-                optionsContainer.classList.remove('open');
-                hideHoverMessage();
-            }
-        }
-    });
-}
-
-// function createNavigationStructure() {
-//     // Create hamburger menu container
-//     const hamburgerContainer = document.createElement('div');
-//     hamburgerContainer.className = 'hamburger-menu';
-    
-//     // Create hamburger button
-//     const hamburgerButton = document.createElement('button');
-//     hamburgerButton.className = 'hamburger-button';
-//     hamburgerButton.innerHTML = `
-//         <img src="/assets/icons/hamburger-menu.svg" alt="Menu" />
-//     `;
-    
-//     // Create options container
-//     const optionsContainer = document.createElement('div');
-//     optionsContainer.className = 'hamburger-options';
-    
-//     hamburgerContainer.appendChild(hamburgerButton);
-//     hamburgerContainer.appendChild(optionsContainer);
-//     document.body.appendChild(hamburgerContainer);
-    
-//     // Toggle menu functionality
-//     let isMenuOpen = false;
-//     hamburgerButton.addEventListener('click', () => {
-//         isMenuOpen = !isMenuOpen;
-//         hamburgerButton.classList.toggle('open', isMenuOpen);
-//         optionsContainer.classList.toggle('open', isMenuOpen);
-//     });
-    
-    
-//     document.addEventListener('click', (e) => {
-//         if (!hamburgerContainer.contains(e.target) && isMenuOpen) {
-          
-//             const isSaveModeActive = document.querySelector('#save-btn .button-text')?.innerText === 'EXIT SAVE';
-            
-           
-//             if (!isSaveModeActive) {
-//                 isMenuOpen = false;
-//                 hamburgerButton.classList.remove('open');
-//                 optionsContainer.classList.remove('open');
-//             }
-//         }
-//     });
-    
-//     // Store references for components to use
-//     window.navigationContainers = {
-//         hamburgerMenu: optionsContainer,
-       
-//         topLeft: document.createElement('div'),
-//         topRight: document.createElement('div'),
-//         bottomLeft: document.createElement('div'),
-//         bottomRight: document.createElement('div')
-//     };
-// }
 
 function init() {
     createNavigationStructure();
@@ -829,8 +470,6 @@ function init() {
         composer.setSize(width, height);
     });
 
-    staticFrequencyData = new Uint8Array(10);
-    
     // Create ParticleSystem WITHOUT initialization
     particleSystem = new ParticleSystem(scene);
     
@@ -839,7 +478,10 @@ function init() {
     loadingScreen.show('Waiting for data');
     
     // CHANGED: Pass room dimensions that match the scene scale
-    let surroundController = new SurroundController();
+    surroundController = new SurroundController();
+    staticFrequencyData = new Uint8Array(
+        surroundController.getFrequencyBinCount()
+    );
     
     // CRITICAL: Set camera for audio listener IMMEDIATELY after creating SurroundController
     surroundController.setCamera(camera);
@@ -872,7 +514,7 @@ function init() {
                 if (window.modeManager?.evolve?.hideSubmissionLoading) {
                     window.modeManager.evolve.hideSubmissionLoading();
                 }
-                
+
                 // Create soundscape toggle button (only first time)
                 if (!initialDataReceived) {
                     initialDataReceived = true;
@@ -1012,7 +654,7 @@ function init() {
                 if (name === 'library' && !this.library?.inSpace) {
                     await Promise.resolve(this.library.enterSpace());
                 }
-                
+
                 // NEW: Show tutorial message for first-time mode entry
                 if (name && window.modeTutorialSystem) {
                     // Delay slightly to let mode UI settle
@@ -1032,7 +674,7 @@ function init() {
             this._locked = true;
 
             window.__modeTransitioning = true;
-            
+
             // NEW: Hide tutorial message immediately when changing modes
             if (window.modeTutorialSystem) {
                 window.modeTutorialSystem.hide();
@@ -1179,27 +821,27 @@ function init() {
 }
 
 // Camera movement with WASD/Arrow keys
-function updateCameraMovement() {
+function updateCameraMovement(deltaTime) {
     // Only move in main scene (not in special modes)
     const isSaveMode = window.modeManager?.isActive('save');
     const isEvolveMode = window.modeManager?.isActive('evolve');
     const isLibraryMode = window.modeManager?.isActive('library');
-    
+
     if (isSaveMode || isEvolveMode || isLibraryMode) return;
     if (keysPressed.size === 0) return;
-    
-    const moveSpeed = 0.5;
+
+    const moveSpeed = 30 * deltaTime;
     const direction = new THREE.Vector3();
-    
+
     // Get camera's forward and right vectors (on XZ plane)
     const forward = new THREE.Vector3();
     camera.getWorldDirection(forward);
     forward.y = 0;
     forward.normalize();
-    
+
     const right = new THREE.Vector3();
     right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-    
+
     // Calculate movement direction based on pressed keys
     if (keysPressed.has('w') || keysPressed.has('arrowup')) {
         direction.add(forward);
@@ -1213,7 +855,7 @@ function updateCameraMovement() {
     if (keysPressed.has('d') || keysPressed.has('arrowright')) {
         direction.add(right);
     }
-    
+
     // Vertical movement (space = up, shift = down)
     const up = new THREE.Vector3(0, 1, 0);
     if (keysPressed.has(' ')) {
@@ -1222,7 +864,7 @@ function updateCameraMovement() {
     if (keysPressed.has('shift')) {
         direction.sub(up);
     }
-    
+
     // Apply movement
     if (direction.length() > 0) {
         direction.normalize().multiplyScalar(moveSpeed);
@@ -1233,16 +875,26 @@ function updateCameraMovement() {
 
 function animate() {
     requestAnimationFrame(animate);
+    const now = performance.now();
+    const deltaTime = lastAnimationTime
+        ? Math.min((now - lastAnimationTime) / 1000, 0.1)
+        : PHYSICS_STEP;
+    lastAnimationTime = now;
 
     // Skip updates and rendering while switching modes (prevents one-frame flash)
     if (window.__modeTransitioning) {
+        animationAccumulator = 0;
         return;
     }
 
     // Update camera movement from keyboard
-    updateCameraMovement();
-    
-    particleSystem.update(staticFrequencyData);
+    updateCameraMovement(deltaTime);
+    surroundController?.getFrequencyData(staticFrequencyData);
+    animationAccumulator += deltaTime;
+    while (animationAccumulator >= PHYSICS_STEP) {
+        particleSystem.update(staticFrequencyData);
+        animationAccumulator -= PHYSICS_STEP;
+    }
 
     
     if (saveMode) {
@@ -1524,7 +1176,7 @@ function createSoundscapeToggle(surroundController) {
     btn.title = 'Play Soundscape';
     
     const img = document.createElement('img');
-    img.src = '/assets/icons/Play.svg'; // Changed from 'Start soundscape.svg'
+    img.src = playIcon;
     img.alt = 'Play Soundscape';
     btn.appendChild(img);
 
@@ -1533,11 +1185,11 @@ function createSoundscapeToggle(surroundController) {
     const applyState = (playing) => {
         isPlaying = !!playing;
         if (isPlaying) {
-            img.src = '/assets/icons/Stop.svg';
+            img.src = stopIcon;
             img.alt = 'Stop Soundscape';
             btn.title = 'Stop Soundscape';
         } else {
-            img.src = '/assets/icons/Play.svg';
+            img.src = playIcon;
             img.alt = 'Play Soundscape';
             btn.title = 'Play Soundscape';
         }
@@ -1584,220 +1236,6 @@ function createSoundscapeToggle(surroundController) {
     return btn;
 }
 
-function createTitleScreen() {
-    // Create title screen container
-    const titleScreen = document.createElement('div');
-    titleScreen.id = 'title-screen';
-    titleScreen.className = 'title-screen';
-    
-    // Create stars background canvas
-    const starsCanvas = document.createElement('canvas');
-    starsCanvas.className = 'title-stars-canvas';
-    starsCanvas.width = window.innerWidth;
-    starsCanvas.height = window.innerHeight;
-    
-    // Create logo container
-    const logoContainer = document.createElement('div');
-    logoContainer.className = 'title-logo-container';
-    
-    const logoImg = document.createElement('img');
-    logoImg.src = '/assets/icons/Logo.svg';
-    logoImg.alt = 'Logo';
-    logoImg.className = 'title-logo';
-    
-    logoContainer.appendChild(logoImg);
-    
-    // Create "press anywhere" message
-    const pressMessage = document.createElement('div');
-    pressMessage.className = 'title-press-message';
-    pressMessage.textContent = 'Press anywhere to continue';
-    
-    // Assemble title screen
-    titleScreen.appendChild(starsCanvas);
-    titleScreen.appendChild(logoContainer);
-    titleScreen.appendChild(pressMessage);
-    document.body.appendChild(titleScreen);
-    
-    // Animate stars on canvas
-    const ctx = starsCanvas.getContext('2d');
-    const stars = [];
-    const starsCount = 300;
-    
-    // Initialize stars
-    for (let i = 0; i < starsCount; i++) {
-        stars.push({
-            x: Math.random() * starsCanvas.width,
-            y: Math.random() * starsCanvas.height,
-            radius: Math.random() * 2 + 0.5,
-            opacity: Math.random() * 0.7 + 0.3,
-            speed: Math.random() * 0.3 + 0.1,
-            twinkleSpeed: Math.random() * 0.02 + 0.01,
-            twinklePhase: Math.random() * Math.PI * 2,
-            // Color variation
-            color: Math.random() < 0.3 ? 'rgb(150, 180, 255)' : // Blue-white
-                   Math.random() < 0.7 ? 'rgb(200, 220, 255)' : // White
-                   'rgb(255, 240, 200)' // Slight yellow
-        });
-    }
-    
-    function animateStars() {
-        // Clear with dark gradient background
-        const gradient = ctx.createRadialGradient(
-            starsCanvas.width / 2, starsCanvas.height / 2, 0,
-            starsCanvas.width / 2, starsCanvas.height / 2, starsCanvas.width / 2
-        );
-        gradient.addColorStop(0, '#0a0a20');
-        gradient.addColorStop(0.4, '#060a18');
-        gradient.addColorStop(0.8, '#040815');
-        gradient.addColorStop(1, '#020205');
-        
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, starsCanvas.width, starsCanvas.height);
-        
-        // Draw and update stars
-        stars.forEach(star => {
-            // Twinkle effect
-            star.twinklePhase += star.twinkleSpeed;
-            const twinkle = Math.sin(star.twinklePhase) * 0.3 + 0.7;
-            
-            ctx.beginPath();
-            ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-            ctx.fillStyle = star.color;
-            ctx.globalAlpha = star.opacity * twinkle;
-            ctx.fill();
-            
-            // Slow drift
-          
-        });
-        
-        ctx.globalAlpha = 1;
-        
-        if (titleScreen.parentElement) {
-            requestAnimationFrame(animateStars);
-        }
-    }
-    
-    animateStars();
-    
-    // Handle window resize
-    const resizeHandler = () => {
-        starsCanvas.width = window.innerWidth;
-        starsCanvas.height = window.innerHeight;
-        
-        // Redistribute stars
-        stars.forEach(star => {
-            if (star.x > starsCanvas.width) star.x = Math.random() * starsCanvas.width;
-            if (star.y > starsCanvas.height) star.y = Math.random() * starsCanvas.height;
-        });
-    };
-    window.addEventListener('resize', resizeHandler);
-    
-    // Remove title screen on any click/key
-    let titleScreenRemoved = false; // Guard to prevent double initialization
-    const removeTitleScreen = () => {
-        if (titleScreenRemoved) return; // Prevent calling twice
-        titleScreenRemoved = true;
-        
-        titleScreen.classList.add('fade-out');
-        
-        // Start main scene initialization earlier (while title is still fading)
-        setTimeout(() => {
-            // Initialize scene in background
-            init();
-        }, 300); // Start after 300ms
-        
-        // Remove title screen after full fade
-        setTimeout(() => {
-            titleScreen.remove();
-            window.removeEventListener('resize', resizeHandler);
-        }, 1500); // Match CSS animation duration
-    };
-    
-    titleScreen.addEventListener('click', removeTitleScreen);
-    window.addEventListener('keydown', removeTitleScreen, { once: true });
-}
-
 // Initialize the application
-createTitleScreen();
-
-// Mode Tutorial System - Shows first-time help messages
-const modeTutorialSystem = {
-    // Track which modes have shown their tutorial
-    shownModes: new Set(),
-    
-    // Tutorial messages for each mode
-    messages: {
-        save: "Click on sounds to select them, then save them individually or as a combination to your library",
-        evolve: "Drag sounds up or down to rate them — higher means better. Switch categories using the tabs above, then submit your ratings",
-        library: "Browse your saved sounds. Click on one to see details, play it, or export it"
-    },
-    
-    // Duration to show message (ms)
-    displayDuration: 6000,
-    
-    // Current timeout reference
-    _timeout: null,
-    _element: null,
-    
-    // Initialize the tutorial element
-    init() {
-        if (this._element) return;
-        
-        this._element = document.createElement('div');
-        this._element.className = 'mode-tutorial-message';
-        document.body.appendChild(this._element);
-    },
-    
-    // Show tutorial for a mode (only on first open)
-    show(modeName) {
-        if (!modeName || this.shownModes.has(modeName)) return;
-        if (!this.messages[modeName]) return;
-        
-        this.init();
-        
-        // Mark as shown
-        this.shownModes.add(modeName);
-        
-        // Clear any existing timeout
-        if (this._timeout) {
-            clearTimeout(this._timeout);
-            this._timeout = null;
-        }
-        
-        // Set message and show
-        this._element.textContent = this.messages[modeName];
-        this._element.classList.remove('fade-out');
-        
-        // Small delay to ensure CSS transition works
-        requestAnimationFrame(() => {
-            this._element.classList.add('visible');
-        });
-        
-        // Auto-hide after duration
-        this._timeout = setTimeout(() => {
-            this.hide();
-        }, this.displayDuration);
-    },
-    
-    // Hide the tutorial message
-    hide() {
-        if (!this._element) return;
-        
-        this._element.classList.add('fade-out');
-        this._element.classList.remove('visible');
-        
-        if (this._timeout) {
-            clearTimeout(this._timeout);
-            this._timeout = null;
-        }
-    },
-    
-    // Reset tracking (useful for testing)
-    reset() {
-        this.shownModes.clear();
-        this.hide();
-    }
-};
-
-// Expose globally
-window.modeTutorialSystem = modeTutorialSystem;
+createTitleScreen(init);
+window.modeTutorialSystem = createModeTutorialSystem();

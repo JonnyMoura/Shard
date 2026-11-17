@@ -1,0 +1,70 @@
+/* Responsive */
+@media (max-width: 768px) {
+    .submission-message {
+        font-size: 1rem;
+        padding: 15px 25px;
+        top: 60px;
+    }
+}
+
+/* Tutorial Message Overlay - Simple text on top */
+
+/* Remove the entire .tutorial-message-overlay section (lines ~1750-1790) */
+
+/* Add new hamburger hover message styles */
+.hamburger-hover-message {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2900;
+
+    font-family: var(--font-ui);
+    font-size: 1.1rem; /* CHANGED: Increased from 0.9rem */
+    font-weight: 100;
+    color: var(--color-cyan);
+    text-align: center;
+    letter-spacing: 0.05em;
+
+    max-width: 100%; /* CHANGED: Wider for continuous text */
+    width: 100%;
+    padding: 0; /* REMOVED: No padding */
+
+    background: transparent; /* REMOVED: No background */
+    border: none; /* REMOVED: No border */
+    border-radius: 0; /* REMOVED: No border radius */
+    backdrop-filter: none; /* REMOVED: No blur */
+    -webkit-backdrop-filter: none;
+
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.3);
+    box-shadow: none; /* REMOVED: No box shadow */
+
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease; /* CHANGED: Smooth fade in/out */
+
+    white-space: nowrap; /* ADDED: No line breaks */
+    overflow: hidden; /* ADDED: Hide overflow */
+    text-overflow: ellipsis; /* ADDED: ... if too long */
+}
+
+.hamburger-hover-message.visible {
+    opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hamburger-hover-message {
+        font-size: 1rem; /* CHANGED: Increased from 0.9rem */
+        bottom: 30px;
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 600px) {
+    .hamburger-hover-message {
+        font-size: 0.95rem; /* CHANGED: Increased from 0.85rem */
+        white-space: normal; /* CHANGED: Allow wrapping on very small screens */
+        max-width: 95%;
+    }
+}

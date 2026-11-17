@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Button } from './Button.js';
+import { cancelIcon, confirmIcon, loadingAnimation } from '../assets.js';
 
 export class EvolvingUI {
     constructor(mainRenderer, mainCamera, controls, particleSystem, pythonCommunication, library) {
@@ -138,25 +139,25 @@ export class EvolvingUI {
         // Keep it hidden until fully positioned
         this.scaleContainer.style.visibility = 'hidden';
         this.scaleContainer.style.opacity = '0';
-        
+
         // Create vertical line
         const line = document.createElement('div');
         line.className = 'scale-line';
-        
+
         // Create top label
         const topLabel = document.createElement('div');
         topLabel.className = 'scale-label scale-label-top';
         topLabel.textContent = 'Best';
-        
+
         // Create bottom label
         const bottomLabel = document.createElement('div');
         bottomLabel.className = 'scale-label scale-label-bottom';
         bottomLabel.textContent = 'Worst';
-        
+
         this.scaleContainer.appendChild(topLabel);
         this.scaleContainer.appendChild(line);
         this.scaleContainer.appendChild(bottomLabel);
-        
+
         // CHANGED: DON'T append to DOM here - wait until position is calculated
         // document.body.appendChild(this.scaleContainer);
         this.scaleAddedToDOM = false;
@@ -165,61 +166,61 @@ export class EvolvingUI {
     // NEW: Update reference scale visual position
     updateReferenceScalePosition() {
         if (!this.scaleContainer) return;
-        
+
         // Get the current solids for active tab to find their baseline position
         const filtered = this.getSolidsByTab(this.activeTab);
-        
+
         if (filtered.length === 0) {
             // Hide scale if no solids
             this.scaleContainer.style.visibility = 'hidden';
             this.scaleContainer.style.opacity = '0';
             return;
         }
-        
+
         // CHANGED: Use full score area range
-        const baseline = (typeof this.globalBaselineCenterY === 'number') 
-            ? this.globalBaselineCenterY 
+        const baseline = (typeof this.globalBaselineCenterY === 'number')
+            ? this.globalBaselineCenterY
             : 0;
-        
+
         const bottomWorld = new THREE.Vector3(0, this.scoreArea.minY, this.fixedCameraTargetLook?.z ?? 0);
         const midWorld = new THREE.Vector3(0, baseline, this.fixedCameraTargetLook?.z ?? 0);
         const topWorld = new THREE.Vector3(0, this.scoreArea.maxY, this.fixedCameraTargetLook?.z ?? 0);
-        
+
         const bottomScreen = this.worldToScreen(bottomWorld);
         const midScreen = this.worldToScreen(midWorld);
         const topScreen = this.worldToScreen(topWorld);
-        
+
         // Calculate scale dimensions (full range)
         const scaleHeight = bottomScreen.y - topScreen.y;
         const scaleTop = topScreen.y;
-        
+
         // Position scale on LEFT side
         const leftOffset = window.innerWidth * 0.12;
-        
+
         // Update scale container position BEFORE adding to DOM
         this.scaleContainer.style.top = `${scaleTop}px`;
         this.scaleContainer.style.left = `${leftOffset}px`;
         this.scaleContainer.style.height = `${scaleHeight}px`;
-        
+
         // Update line height
         const line = this.scaleContainer.querySelector('.scale-line');
         if (line) {
             line.style.height = `${scaleHeight}px`;
         }
-        
+
         // Position middle label at baseline (if exists)
         const midLabel = this.scaleContainer.querySelector('.scale-label-mid');
         if (midLabel) {
             const midOffset = midScreen.y - topScreen.y;
             midLabel.style.top = `${midOffset}px`;
         }
-        
+
         // CHANGED: Add to DOM only AFTER all calculations, then show
         if (!this.scaleAddedToDOM) {
             document.body.appendChild(this.scaleContainer);
             this.scaleAddedToDOM = true;
         }
-        
+
         // Show scale AFTER everything is set
         // Use requestAnimationFrame to ensure DOM has updated with new dimensions
         requestAnimationFrame(() => {
@@ -244,34 +245,34 @@ screenYToWorldY(screenY) {
     const ndcX = 0; // center of screen
     const ndcY = -((screenY / window.innerHeight) * 2 - 1); // flip Y
     const ndcZ = 0.5;
-    
+
     const vector = new THREE.Vector3(ndcX, ndcY, ndcZ);
     vector.unproject(this.mainCamera);
-    
+
     // Project onto the plane at fixedCameraTargetLook.z (or 0)
     const cameraPos = this.mainCamera.position;
     const dir = vector.sub(cameraPos).normalize();
     const targetZ = this.fixedCameraTargetLook?.z ?? 0;
     const t = (targetZ - cameraPos.z) / dir.z;
-    
+
     return cameraPos.y + dir.y * t;
 }
 
 // NEW: Update score area bounds based on screen UI elements
 updateScoreAreaFromScreen() {
     // Get the baseline (center of the scoring range)
-    const baseline = (typeof this.globalBaselineCenterY === 'number') 
-        ? this.globalBaselineCenterY 
+    const baseline = (typeof this.globalBaselineCenterY === 'number')
+        ? this.globalBaselineCenterY
         : 0;
-    
+
     // Set a generous fixed range above and below baseline
     // CHANGED: Increased range for larger drag area
     const rangeAbove = 30;  // How far above baseline solids can go
     const rangeBelow = 40;  // How far below baseline solids can go (into negative Y)
-    
+
     this.scoreArea.maxY = baseline + rangeAbove;  // top of drag area
     this.scoreArea.minY = baseline - rangeBelow;  // bottom of drag area (can be negative)
-    
+
     console.log(`[Evolve] Score area updated: minY=${this.scoreArea.minY.toFixed(2)}, maxY=${this.scoreArea.maxY.toFixed(2)}, baseline=${baseline.toFixed(2)}`);
 }
 
@@ -407,6 +408,7 @@ updateScoreAreaFromScreen() {
         this.solidMeshes = this.particleSystem.getSolids ? this.particleSystem.getSolids() : this.solidMeshes;
 
         this.savedYByTab.clear();
+        this.allTabScores.clear();
         this.visitedTabs.clear();
         this.solidMeshes.forEach(m => { delete m.userData.hasUserDragged; });
 
@@ -443,7 +445,7 @@ updateScoreAreaFromScreen() {
         }
         
         this.createSubmitButton();
-        
+
         // NEW: Update score area based on UI element positions
         setTimeout(() => {
             this.updateScoreAreaFromScreen();
@@ -807,7 +809,7 @@ updateScoreAreaFromScreen() {
             const b = new THREE.Box3().setFromObject(this.drag.mesh);
             const currentCenter = b.getCenter(new THREE.Vector3());
             const centerOffset = currentCenter.y - this.drag.mesh.position.y; 
-            
+
             // CHANGED: Use full score area range (minY to maxY)
             const minCenterY = this.scoreArea.minY;
             const maxCenterY = this.scoreArea.maxY;
@@ -934,7 +936,7 @@ window.addEventListener('resize', () => {
         
         const rangeAbove = this.scoreArea.maxY - baseline;
         const rangeBelow = baseline - this.scoreArea.minY;
-        
+
         let score;
         if (y >= baseline) {
             // Above baseline: 0.5 to 1
@@ -1073,17 +1075,25 @@ window.addEventListener('resize', () => {
 
 // NEW: Actually perform the submission
 doSubmitScores() {
+    const generation = this.currentGeneration?.generation;
+    if (!Number.isInteger(generation)) {
+        this.showSubmissionMessage('Cannot submit scores: generation data is unavailable', true);
+        return;
+    }
+
     // FIXED: Set submitting flag instead of global transition flag
     this._isSubmitting = true;
+    const feedback = this.buildFeedbackArray();
 
     const payload = {
         action: 'user_feedback',
         type: 'user_scoring',
+        generation,
         current_tab: this.activeTab,
         total_solutions: this.allSolutions?.length || 0,
-        actually_scored_solutions: [...this.allTabScores.values()].filter(Boolean).length,
+        actually_scored_solutions: feedback.filter(item => item.was_scored).length,
         all_solutions_included: true,
-        feedback: this.buildFeedbackArray()
+        feedback
     };
 
     const ok = this.pythonCommunication.sendUserFeedback(payload);
@@ -1100,7 +1110,7 @@ doSubmitScores() {
     this.lastSubmittedGeneration = this.currentGeneration;
     this.showSubmissionMessage('Scores submitted successfully, wait for new sounds to generate!');
     this.updateSubmitButton();
-    
+
     // NEW: Show loading indicator while waiting for new generation
     this.showSubmissionLoading();
 }
@@ -1109,7 +1119,7 @@ doSubmitScores() {
 showSubmissionLoading() {
     // Remove existing if any
     this.hideSubmissionLoading();
-    
+
     // Create loading container
     this.submissionLoadingEl = document.createElement('div');
     this.submissionLoadingEl.className = 'submission-loading';
@@ -1122,20 +1132,20 @@ showSubmissionLoading() {
         opacity: 0;
         transition: opacity 0.3s ease;
     `;
-    
+
     // Create image element
     const img = document.createElement('img');
-    img.src = '/assets/icons/load-shard.gif';
+    img.src = loadingAnimation;
     img.alt = 'Loading...';
     img.style.cssText = `
         width: 48px;
         height: 48px;
         filter: brightness(0) saturate(100%) invert(93%) sepia(14%) saturate(1048%) hue-rotate(154deg) brightness(103%) contrast(100%) drop-shadow(0 0 4px rgba(201, 251, 255, 0.4));
     `;
-    
+
     this.submissionLoadingEl.appendChild(img);
     document.body.appendChild(this.submissionLoadingEl);
-    
+
     // Fade in
     requestAnimationFrame(() => {
         this.submissionLoadingEl.style.opacity = '1';
@@ -1159,27 +1169,27 @@ hideSubmissionLoading() {
 showSubmitConfirmation(scored, total, unscored) {
     // Remove existing overlay if any
     this.hideSubmitConfirmation();
-    
+
     // Create overlay
     this.submitConfirmOverlay = document.createElement('div');
     this.submitConfirmOverlay.className = 'name-input-overlay';
-    
+
     // Click outside widget to cancel
     this.submitConfirmOverlay.onclick = (e) => {
         if (e.target === this.submitConfirmOverlay) {
             this.hideSubmitConfirmation();
         }
     };
-    
+
     // Create dialog widget
     const widget = document.createElement('div');
     widget.className = 'name-input-widget';
-    
+
     // Title
     const title = document.createElement('h3');
     title.textContent = 'Incomplete Scoring';
     widget.appendChild(title);
-    
+
     // Message
     const message = document.createElement('p');
     message.innerHTML = `You have scored <strong>${scored}</strong> of <strong>${total}</strong> sounds.<br><br>` +
@@ -1188,36 +1198,36 @@ showSubmitConfirmation(scored, total, unscored) {
     message.style.marginBottom = '24px';
     message.style.lineHeight = '1.0';
     widget.appendChild(message);
-    
+
     // Buttons container
     const buttons = document.createElement('div');
     buttons.className = 'name-input-buttons';
-    
+
     // Cancel button - go back to scoring
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'name-input-btn cancel';
-    cancelBtn.innerHTML = '<img src="/assets/icons/Cancel.svg" class="name-input-icon" alt="Cancel">';
+    cancelBtn.innerHTML = `<img src="${cancelIcon}" class="name-input-icon" alt="Cancel">`;
     cancelBtn.title = 'Go back and score more';
     cancelBtn.onclick = () => {
         this.hideSubmitConfirmation();
     };
     buttons.appendChild(cancelBtn);
-    
+
     // Confirm button - submit anyway
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'name-input-btn save';
-    confirmBtn.innerHTML = '<img src="/assets/icons/Confirm.svg" class="name-input-icon" alt="Submit">';
+    confirmBtn.innerHTML = `<img src="${confirmIcon}" class="name-input-icon" alt="Submit">`;
     confirmBtn.title = 'Submit anyway';
     confirmBtn.onclick = () => {
         this.hideSubmitConfirmation();
         this.doSubmitScores();
     };
     buttons.appendChild(confirmBtn);
-    
+
     widget.appendChild(buttons);
     this.submitConfirmOverlay.appendChild(widget);
     document.body.appendChild(this.submitConfirmOverlay);
-    
+
     // Fade in
     requestAnimationFrame(() => {
         this.submitConfirmOverlay.style.opacity = '1';
@@ -1383,33 +1393,14 @@ handleEvolveCategoryClick(categoryName, e) {
     e?.stopPropagation();
     
     console.log(`🧬 User requested evolution for category: ${categoryName}`);
-    
-    // Visual feedback on button (optional)
-    const btn = e?.target?.closest('.evolve-category-btn');
-    if (btn) {
-        btn.classList.add('evolving');
-        btn.textContent = 'Evolving...';
-        btn.disabled = true; // Prevent multiple clicks
+
+    if (!this.pythonCommunication?.sendUserFeedback) {
+        console.error('❌ Python communication is unavailable');
+        this.showSubmissionMessage('Could not submit scores', true);
+        return;
     }
-    
-    // Request evolution (will trigger onEvolutionStart callback in main.js)
-    const success = this.pythonComm.requestEvolution(categoryName);
-    
-    if (success) {
-        console.log(`✅ Evolution request sent for ${categoryName}`);
-    } else {
-        console.error('❌ Failed to send evolution request');
-        
-        // Reset button if request failed
-        if (btn) {
-            btn.classList.remove('evolving');
-            btn.textContent = `Evolve ${categoryName}`;
-            btn.disabled = false;
-        }
-    }
-    
-    // Note: Button will be reset when new generation data arrives
-    // (EvolvingUI.transitionToEvolvingLayout will recreate the UI)
+
+    this.submitScores();
 }
 
 showSubmissionMessage(message, isError = false) {

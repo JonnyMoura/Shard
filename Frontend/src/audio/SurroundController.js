@@ -49,6 +49,18 @@ export class SurroundController {
         }
     }
 
+    getFrequencyBinCount() {
+        return this.ctx.analyser.frequencyBinCount;
+    }
+
+    getFrequencyData(target) {
+        if (!(target instanceof Uint8Array)) {
+            throw new TypeError('Frequency data target must be a Uint8Array');
+        }
+        this.ctx.analyser.getByteFrequencyData(target);
+        return target;
+    }
+
     _updateListenerFromCamera() {
         if (!this.camera) return;
         
@@ -724,6 +736,17 @@ export class SurroundController {
             if (!mesh) return;
             const original = mesh.userData.__surroundOriginalMaterial || material;
             if (original) {
+                if (mesh.material && mesh.material !== original) {
+                    const originals = new Set(
+                        Array.isArray(original) ? original : [original]
+                    );
+                    const materials = Array.isArray(mesh.material)
+                        ? mesh.material
+                        : [mesh.material];
+                    materials.forEach(current => {
+                        if (current && !originals.has(current)) current.dispose();
+                    });
+                }
                 mesh.material = original;
             }
             delete mesh.userData.__surroundOriginalMaterial;

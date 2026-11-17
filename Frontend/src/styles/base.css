@@ -1,0 +1,74 @@
+/* Import Google Font - Space Grotesk */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --color-cyan: #C9FBFF;
+    --color-cyan-rgb: 201, 251, 255;
+    --color-mint: #53D3C0;
+    --color-mint-rgb: 83, 211, 192;
+    --color-navy-rgb: 0, 20, 40;
+    --color-danger: #FF6B6B;
+    --color-danger-rgb: 255, 107, 107;
+    --font-ui: 'Space Grotesk', sans-serif;
+}
+
+/* Base styles */
+@font-face {
+    font-family: 'Garet';
+    src: url('../fonts/Garet-Book.ttf') format('ttf');
+    font-display: swap;
+}
+
+* {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+    display: none;
+}
+
+canvas {
+    display: block;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+    display: none;
+}
+
+#visualization-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+#controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 10px;
+    border-radius: 5px;
+}
+
+canvas#evolve2d {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: auto;
+}

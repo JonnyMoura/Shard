@@ -1,0 +1,66 @@
+/* Evolve Reference Scale */
+.evolve-reference-scale {
+    position: fixed;
+    display: flex;  /* CHANGED from 'none' - always flex, use visibility to hide */
+    flex-direction: column;
+    align-items: center;
+    z-index: 1500;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+
+    /* NEW: Animation for appearing */
+    animation: scaleAppear 0.5s ease-out;
+}
+
+/* NEW: Keyframe animation for scale appearing */
+@keyframes scaleAppear {
+    from {
+        opacity: 0;
+
+    }
+    to {
+        opacity: 1;
+
+    }
+}
+
+.scale-line {
+    width: 2px;
+    background: linear-gradient(to bottom,
+        rgba(var(--color-mint-rgb), 0.85) 0%,
+        rgba(var(--color-mint-rgb), 0.6) 50%,
+        rgba(var(--color-danger-rgb), 0.7) 100%);
+    box-shadow: 0 0 8px rgba(var(--color-mint-rgb), 0.4);
+    flex: 1;
+}
+
+.scale-label {
+    font-family: var(--font-ui);
+    font-size: 1.1rem; /* CHANGED: Increased from 0.85rem */
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    color: var(--color-cyan);
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.3);
+    margin: 6px 0;
+    white-space: nowrap;
+}
+
+.scale-label-top {
+    color: var(--color-mint);
+    text-shadow: 0 0 8px rgba(var(--color-mint-rgb), 0.4);
+}
+
+.scale-label-bottom {
+    color: var(--color-danger);
+    text-shadow: 0 0 8px rgba(var(--color-danger-rgb), 0.4);
+}
+
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .evolve-reference-scale {
+        display: none !important; /* Hide on mobile for clarity */
+    }
+}

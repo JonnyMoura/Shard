@@ -4,6 +4,17 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+
+def classify_audio_category(centroid, spectral_flux, onset_rate, zcr):
+    if 700 < spectral_flux < 1500 and onset_rate > 8.0 and zcr > 0.1:
+        return "rhythmic"
+    if centroid <= 1200:
+        return "low"
+    if centroid >= 3000:
+        return "high"
+    return "mid"
+
+
 def analyze_audio_file(file_path):
     """Analyze audio file using corrected classification logic with rolloff"""
     try:
@@ -25,14 +36,9 @@ def analyze_audio_file(file_path):
         zcr = np.mean(librosa.feature.zero_crossing_rate(y, hop_length=hop_length))
 
         
-        if spectral_flux < 1500 and spectral_flux > 700 and onset_rate > 8.0 and zcr > 0.1:
-            dominant_category = 'rhythmic'
-        elif centroid <= 1200:
-            dominant_category = 'low'
-        elif centroid >= 3000:
-            dominant_category = 'high'
-        else:
-            dominant_category = 'mid'
+        dominant_category = classify_audio_category(
+            centroid, spectral_flux, onset_rate, zcr
+        )
         
         return {
             "file_path": file_path,
@@ -65,4 +71,3 @@ def analyze_folder(folder_path, output_csv):
     print(f"Analysis complete. {len(results)} files analyzed and saved to {output_csv}")
     print(f"Category distribution: {df['dominant_category'].value_counts().to_dict()}")
     return df
-

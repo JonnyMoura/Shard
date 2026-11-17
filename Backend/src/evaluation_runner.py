@@ -1,16 +1,14 @@
 import os
 import time
-import json
+from pathlib import Path
 from typing import Dict, Any, List, Tuple
 import numpy as np
 
 try:
     from ribs.archives import GridArchive
-    from ribs.emitters import GaussianEmitter
     from ribs.schedulers import Scheduler
 except Exception:
     GridArchive = None
-    GaussianEmitter = None
     Scheduler = None
 
 from src.evaluation_metrics import (
@@ -30,9 +28,9 @@ from src.evaluation_metrics import (
 
 # Import project utilities (same folder)
 from src.audio_synthesis import generate_audio_stream, extract_audio_descriptors
+from src.dataset_class import classify_audio_category
 from src.evolutionary_module import (
     archive as evo_archive,
-    emitters as evo_emitters,
     automatic_fitness,
     general_bounds,
 )
@@ -44,20 +42,9 @@ from src.runner_helpers import (
     get_tracks_from_solution,
     clear_registries,
 )
-# Using normal component values directly from emitters; no remapping.
 
-
-def create_emitters_for(archive: Any, dim: int, batch_size: int = 64) -> List[Any]:
-    emitters = []
-    if GaussianEmitter is None:
-        return emitters
-    # Single emitter with desired batch size to match pop_size
-    emitters.append(
-        GaussianEmitter(
-            archive, x0=np.zeros(dim), sigma=0.1, batch_size=batch_size
-        )
-    )
-    return emitters
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = BACKEND_DIR / "data"
 
 
 def save_algorithm_params(params: Dict[str, Any], out_dir: str):
@@ -110,31 +97,40 @@ def save_generation_audio(gen_idx: int, audios: List[np.ndarray], sr: int, out_d
         sf.write(path, y.astype(np.float32), sr)
 
 
-def timed_job(solution_vec: np.ndarray, catalog_df, category: str, duration: float = 30.0) -> Tuple[float, float, np.ndarray, np.ndarray, int]:
+def timed_job(
+    solution_vec: np.ndarray,
+    catalog_df,
+    category: str,
+    duration: float,
+    sample_rate: int,
+) -> Tuple[float, float, np.ndarray, np.ndarray, int]:
     """Synthesize audio and compute raw descriptors using assigned tracks & category."""
     t0 = time.perf_counter()
     sources = get_tracks_from_solution(solution_vec, catalog_df)
     # Normalize source paths to absolute within project root; fix '../' prefixes
     norm_sources = []
-    cwd = os.getcwd()
     for p in sources:
-        if isinstance(p, str) and p.startswith("../"):
-            p2 = os.path.join(cwd, p[3:].lstrip("/\\"))
-        elif isinstance(p, str) and not os.path.isabs(p):
-            p2 = os.path.join(cwd, p)
+        if os.path.isabs(p):
+            candidates = [p]
         else:
-            p2 = p
-        if os.path.exists(p2):
-            norm_sources.append(p2)
-    # Fallback: pick first audio from data/audio if none valid
-    if not norm_sources:
-        audio_dir = os.path.join(cwd, "data", "audio")
-        for name in os.listdir(audio_dir) if os.path.isdir(audio_dir) else []:
-            if name.lower().endswith((".wav", ".flac", ".ogg")):
-                norm_sources.append(os.path.join(audio_dir, name))
-                break
+            candidates = [
+                os.path.normpath(os.path.join(base, p))
+                for base in (BACKEND_DIR, BACKEND_DIR / "src", Path.cwd())
+            ]
+        existing = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
+        if existing:
+            norm_sources.append(existing)
 
-    audio, sr = generate_audio_stream(solution_vec, duration=duration, sources=norm_sources or None, category=category)
+    if not norm_sources:
+        raise FileNotFoundError(f"No assigned audio sources exist: {sources}")
+
+    audio, sr = generate_audio_stream(
+        solution_vec,
+        duration=duration,
+        sources=norm_sources,
+        category=category,
+        target_sample_rate=sample_rate,
+    )
     t1 = time.perf_counter()
     raw_desc = extract_audio_descriptors(audio, sr)
     t2 = time.perf_counter()
@@ -155,12 +151,24 @@ def run_single_trial(
     # Clear registries at the start of each run for independent state
     clear_registries()
     
-    out_dir = os.path.join(out_root, f"run_{trial_idx:03d}")
+    out_root = Path(out_root)
+    if not out_root.is_absolute():
+        out_root = BACKEND_DIR / out_root
+    out_dir = os.fspath(out_root / f"run_{trial_idx:03d}")
     os.makedirs(out_dir, exist_ok=True)
 
     # Use project's normal archive and emitters
     if Scheduler is None:
         raise RuntimeError("PyRibs not available. Install via 'pip install ribs'.")
+    if pop_size < 1:
+        raise ValueError("pop_size must be greater than zero")
+    if sr < 1:
+        raise ValueError("sr must be greater than zero")
+    if duration <= 0:
+        raise ValueError("duration must be greater than zero")
+    dims = tuple(int(d) for d in dims)
+    if len(dims) != 3 or any(d < 1 for d in dims):
+        raise ValueError("dims must contain three positive integers")
     
     # Create a FRESH archive for each run to ensure independent metrics
     # Copy configuration from evo_archive but start empty
@@ -171,37 +179,26 @@ def run_single_trial(
     
     archive = GridArchive(
         solution_dim=evo_archive.solution_dim,
-        dims=list(evo_archive.dims),
+        dims=list(dims),
         ranges=archive_ranges,
     )
-    # Create fresh emitters for this archive
     emitters = []
-    for _ in range(4):
-        emitters.append(EvolutionStrategyEmitter(
-            archive,
-            x0=np.random.uniform(low=general_bounds[0], high=general_bounds[1]),
-            sigma0=0.7,
-            batch_size=4
-        ))
-        emitters.append(IsoLineEmitter(
-            archive,
-            x0=np.random.uniform(low=general_bounds[0], high=general_bounds[1]),
-            batch_size=4
-        ))
-        emitters.append(EvolutionStrategyEmitter(
-            archive,
-            x0=np.random.uniform(low=general_bounds[0], high=general_bounds[1]),
-            sigma0=0.7,
-            batch_size=4
-        ))
-        emitters.append(EvolutionStrategyEmitter(
-            archive,
-            x0=np.random.uniform(low=general_bounds[0], high=general_bounds[1]),
-            sigma0=0.7,
-            batch_size=4
-        ))
+    emitter_types = [EvolutionStrategyEmitter, IsoLineEmitter,
+                     EvolutionStrategyEmitter, EvolutionStrategyEmitter] * 4
+    if pop_size == 1:
+        emitter_types = [IsoLineEmitter]
+    emitter_count = min(len(emitter_types), max(1, pop_size // 2))
+    base_batch_size, remainder = divmod(pop_size, emitter_count)
+    for index, emitter_type in enumerate(emitter_types[:emitter_count]):
+        emitter_kwargs = {
+            "archive": archive,
+            "x0": np.random.uniform(low=general_bounds[0], high=general_bounds[1]),
+            "batch_size": base_batch_size + (index < remainder),
+        }
+        if emitter_type is EvolutionStrategyEmitter:
+            emitter_kwargs["sigma0"] = 0.7
+        emitters.append(emitter_type(**emitter_kwargs))
     scheduler = Scheduler(archive, emitters)
-    dims = tuple(int(d) for d in archive.dims)
 
     params = {
         "generations": generations,
@@ -238,17 +235,17 @@ def run_single_trial(
     save_algorithm_params(params, out_dir)
 
     # Load catalog for track assignments
-    catalog_path = os.path.join("data", "audio_analysis.csv")
+    catalog_path = DATA_DIR / "audio_analysis.csv"
     try:
-        catalog_df = load_audio_catalog(catalog_path)
-    except Exception:
+        catalog_df = load_audio_catalog(str(catalog_path))
+    except FileNotFoundError:
         # Fallback catalog built from files in data/audio
-        audio_dir = os.path.join("data", "audio")
+        audio_dir = DATA_DIR / "audio"
         file_paths = []
-        if os.path.isdir(audio_dir):
+        if audio_dir.is_dir():
             for name in os.listdir(audio_dir):
                 if name.lower().endswith((".wav", ".flac", ".ogg")):
-                    file_paths.append(os.path.join(audio_dir, name))
+                    file_paths.append(str(audio_dir / name))
         import pandas as pd
         catalog_df = pd.DataFrame({
             "file_path": file_paths,
@@ -257,6 +254,8 @@ def run_single_trial(
             "centroid": [1500.0] * len(file_paths),
             "onset_rate": [0.0] * len(file_paths),
         })
+    if catalog_df.empty:
+        raise RuntimeError(f"No audio files are available in {DATA_DIR / 'audio'}")
 
     # Metrics storage
     gen_metrics_rows = []
@@ -282,19 +281,17 @@ def run_single_trial(
         audios = []
         objectives = []
         raw_descs = []
-        srs = []
-        categories_per_sol = []  # Store category for each solution to use in fitness
         synth_time_sum = 0.0
         desc_time_sum = 0.0
         for i in range(len(X)):
             category = get_assigned_category(X[i]) or "mid"
-            categories_per_sol.append(category)
-            tot, ts, raw_desc, y, sr_audio = timed_job(X[i], catalog_df, category, duration=duration)
+            tot, ts, raw_desc, y, sr_audio = timed_job(
+                X[i], catalog_df, category, duration, sr
+            )
             synth_time_sum += ts
             desc_time_sum += tot - ts
             audios.append(y)
             raw_descs.append(raw_desc)
-            srs.append(sr_audio)
 
         raw_descs = np.array(raw_descs)  # [centroid, rolloff, spectral_flux, onset_rate, zcr]
         centroid = raw_descs[:, 0]
@@ -313,18 +310,19 @@ def run_single_trial(
         except Exception:
             pass
         # Objective: use project's automatic_fitness with category (like main.py)
-        objectives = []
         for i in range(len(X)):
-            objectives.append(float(automatic_fitness(raw_descs[i], categories_per_sol[i])))
-        objectives = np.array(objectives)
+            actual_category = classify_audio_category(
+                raw_descs[i, 0], raw_descs[i, 2], raw_descs[i, 3], raw_descs[i, 4]
+            )
+            objectives.append(float(automatic_fitness(raw_descs[i], actual_category)))
+        objectives = np.asarray(objectives)
 
         # Tell archive
         scheduler.tell(objectives, measures)
 
         # Save audio for this generation
         # Use the actual audio sampling rate; assume consistent
-        sr_use = srs[-1] if srs else sr
-        save_generation_audio(g, audios, int(sr_use), os.path.join(out_dir, "audio"))
+        save_generation_audio(g, audios, sr, os.path.join(out_dir, "audio"))
 
         # Metrics from archive
         m = extract_archive_map(archive)
@@ -582,6 +580,11 @@ def main():
     parser.add_argument("--out", type=str, default="data/evaluation", help="Output root folder")
     args = parser.parse_args()
 
+    out_root = Path(args.out)
+    if not out_root.is_absolute():
+        out_root = BACKEND_DIR / out_root
+    out_root = os.fspath(out_root)
+
     runs = []
     for i in range(args.runs):
         print(f"Running trial {i+1}/{args.runs}...")
@@ -592,13 +595,13 @@ def main():
             sr=args.sr,
             dims=tuple(args.dims),
             duration=args.duration,
-            out_root=args.out,
+            out_root=out_root,
         )
         runs.append(r)
 
-    aggregate_and_plot(runs, args.out)
-    save_citations(args.out)
-    print("Done. Outputs in:", args.out)
+    aggregate_and_plot(runs, out_root)
+    save_citations(out_root)
+    print("Done. Outputs in:", out_root)
 
 
 if __name__ == "__main__":

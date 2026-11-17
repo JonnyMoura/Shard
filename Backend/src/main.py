@@ -1,27 +1,26 @@
 import os
 import numpy as np
 import json
-from dataset_class import analyze_folder
+from dataset_class import analyze_folder, classify_audio_category
 import soundfile as sf
-import matplotlib.pyplot as plt
-import sounddevice as sd
 from evolutionary_module import archive, emitters, automatic_fitness, general_bounds
 from ribs.schedulers import Scheduler
-from audio_synthesis import generate_audio_stream, extract_audio_descriptors
-from utils import load_audio_catalog
-import librosa
-import concurrent.futures
 import pandas as pd
-import random
-import multiprocessing as mp
 import asyncio
 import websockets
 import threading
 import base64
 import io
-import time
 import queue
+from synthesis_pipeline import (
+    render_selected_previews as _render_selected_previews,
+    resolve_source_path,
+    run_synthesis_jobs as _run_synthesis_jobs,
+)
+from feedback_validation import feedback_matches_generation as _feedback_matches_generation
+from generation_payload import build_generation_payload
 
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 TRACKS_PER_SOLUTION = 2  # Number of tracks per solution
 categories = ['low', 'mid', 'high', 'rhythmic']
@@ -32,6 +31,7 @@ SOLUTION_CATEGORY_ASSIGNMENTS = {}  # Maps solution_id -> assigned_category
 
 # WebSocket server globals
 websocket_clients = set()
+websocket_loop = None
 generation_data_latest = None  # Replace generation_data_queue = []
 user_feedback_queue = queue.Queue()  
 evolution_state = {
@@ -50,25 +50,15 @@ def solution_to_id(solution):
     return hash(tuple(solution.round(6))) 
 
 def get_tracks_from_solution(solution, catalog_df):
-    """Extract track paths from solution's assigned tracks using global dict."""
+    """Resolve the parent-process track assignment for a solution."""
     solution_id = solution_to_id(solution)
-    
-    if solution_id in SOLUTION_TRACK_ASSIGNMENTS:
-        track_indices = SOLUTION_TRACK_ASSIGNMENTS[solution_id]
-    else:
-        # Fallback to random tracks
-        track_indices = [np.random.randint(0, len(catalog_df)) for _ in range(TRACKS_PER_SOLUTION)]
-        SOLUTION_TRACK_ASSIGNMENTS[solution_id] = track_indices
-    
-    # Ensure valid indices
-    track_indices = [np.clip(idx, 0, len(catalog_df) - 1) for idx in track_indices]
-    
-    # Get file paths
-    track_paths = []
-    for idx in track_indices:
-        track_paths.append(catalog_df.iloc[idx]['file_path'])
-    
-    return track_paths
+    if solution_id not in SOLUTION_TRACK_ASSIGNMENTS:
+        raise KeyError(f"No track assignment exists for solution {solution_id}")
+    if catalog_df.empty:
+        raise ValueError("The audio catalog is empty")
+
+    track_indices = SOLUTION_TRACK_ASSIGNMENTS[solution_id]
+    return [catalog_df.iloc[int(idx)]["file_path"] for idx in track_indices]
 
 def balanced_category_track_assignment(offspring, catalog_df):
     """Assign tracks to solutions with balanced category distribution using global dicts."""
@@ -150,47 +140,26 @@ def get_assigned_category(solution):
     solution_id = solution_to_id(solution)
     return SOLUTION_CATEGORY_ASSIGNMENTS.get(solution_id, 'unknown')
 
-def get_assigned_tracks(solution):
-    """Get assigned track indices for a solution."""
-    solution_id = solution_to_id(solution)
-    return SOLUTION_TRACK_ASSIGNMENTS.get(solution_id, [])
+def _make_synthesis_jobs(offspring, catalog_df, duration, include_audio):
+    jobs = []
+    for solution in offspring:
+        source_tracks = [
+            resolve_source_path(path, DATA_DIR, os.path.dirname(__file__))
+            for path in get_tracks_from_solution(solution, catalog_df)
+        ]
+        jobs.append({
+            "solution": solution,
+            "source_tracks": source_tracks,
+            "category": get_assigned_category(solution),
+            "duration": duration,
+            "include_audio": include_audio,
+        })
+    return jobs
 
-
-
-def _job(job):
-    """Process a synthesis job """
-    solution = job['solution']  
-    catalog_data = job['catalog_data'] 
-
-    catalog_df = pd.DataFrame(catalog_data)
-    
-    # Extract only audio parameters 
-    audio_params = solution
-    
-    # Extract track paths from solution's assigned tracks
-    source_tracks = get_tracks_from_solution(solution, catalog_df)
-    
-    # Synthesize audio using the provided data 
-    audio_stream, sample_rate = generate_audio_stream(audio_params, duration=30, sources=source_tracks)
-    
-    descriptors = extract_audio_descriptors(audio_stream, sample_rate)
-
-    
-    return audio_stream, sample_rate, descriptors, source_tracks
 
 def assign_category_from_descriptors(descriptors):
-   
-    centroid, contrast, spectral_flux, onset_rate, zcr = descriptors  
-
-    
-    if spectral_flux < 1500 and spectral_flux > 700 and onset_rate > 10.0 and zcr > 0.1: 
-        return 'rhythmic'
-    elif centroid <= 1200:
-        return 'low'
-    elif centroid >= 2500:
-        return 'high'
-    else: 
-        return 'mid'
+    centroid, _, spectral_flux, onset_rate, zcr = descriptors
+    return classify_audio_category(centroid, spectral_flux, onset_rate, zcr)
 
 def find_closest_archive_elite(solution, archive):
     """Find the archive elite closest to this solution and return both elite and distance."""
@@ -394,7 +363,7 @@ def inherit_tracks_from_archive(offspring, catalog_df, archive, mutation_rate):
     
     return offspring
 
-def calculate_hybrid_fitness(descriptors, category, user_score=None, was_scored=False, original_fitness=None):
+def calculate_hybrid_fitness(descriptors, category, user_score=None, was_scored=False):
     """Calculate hybrid fitness combining automatic fitness with user feedback."""
     auto_fitness = automatic_fitness(descriptors, category)
     
@@ -438,76 +407,87 @@ def audio_to_base64(audio_stream, sample_rate):
 
     except Exception as e:
         print(f"    ❌ Audio conversion error: {e}")
-        return ""
+        raise RuntimeError("Could not encode synthesized audio") from e
+
+async def _broadcast_generation(generation_data):
+    message = json.dumps(generation_data)
+    for client in tuple(websocket_clients):
+        try:
+            await client.send(message)
+        except websockets.exceptions.ConnectionClosed:
+            websocket_clients.discard(client)
+        except Exception as error:
+            print(f"WebSocket broadcast failed for {client.remote_address}: {error}")
+            websocket_clients.discard(client)
+
 
 def start_websocket_server():
-    """Start WebSocket server in a separate thread.""" 
+    """Run the WebSocket server on its own event loop."""
     def run_server():
+        global websocket_loop
+
         async def websocket_handler(websocket):
             print(f"New WebSocket client connected from {websocket.remote_address}")
             websocket_clients.add(websocket)
-            
             try:
-                # Send ONLY the most recent generation data to new client
                 if generation_data_latest is not None:
                     await websocket.send(json.dumps(generation_data_latest))
-                    print(f"Sent most recent generation {generation_data_latest.get('generation', '?')} to new client")
-                else:
-                    print("No generation data available yet for new client")
-                
-                # Handle incoming messages
+
                 async for message in websocket:
                     try:
                         data = json.loads(message)
-                        print(f"📨 Received message: {data.get('action', 'unknown')}")
-                        # DEBUG: print full incoming payload
-                        try:
-                            print("🔍 Incoming payload (raw):")
-                            print(json.dumps(data, indent=2, ensure_ascii=False)[:5000])
-                        except Exception:
-                            print(f"🔍 Incoming payload (raw str): {message[:5000]}")
-                        
-                        if data.get('action') == 'user_feedback' and data.get('type') == 'user_scoring':
-                            print(f"🎯 User feedback received: {data.get('scored_solutions', 0)} solutions scored")
-                            
-                            try:
-                                print("🧾 Enqueuing user_feedback:")
-                                print(json.dumps(data, indent=2, ensure_ascii=False)[:5000])
-                            except Exception:
-                                pass
+                    except json.JSONDecodeError:
+                        print(f"Invalid JSON received: {message}")
+                        continue
+
+                    if not isinstance(data, dict):
+                        print(f"Invalid WebSocket message object: {data}")
+                        continue
+
+                    if (
+                        data.get("action") == "user_feedback"
+                        and data.get("type") == "user_scoring"
+                    ):
+                        pending = evolution_state.get("pending_generation_data") or {}
+                        expected_count = len(pending.get("selected_indices", []))
+                        if _feedback_matches_generation(
+                            data,
+                            evolution_state["current_generation"],
+                            expected_count,
+                        ):
                             user_feedback_queue.put(data)
                         else:
-                            print(f"❓ Unknown message type: {data}")
-                    except json.JSONDecodeError:
-                        print(f"❌ Invalid JSON received: {message}")
-                    except Exception as e:
-                        print(f"❌ Error processing message: {e}")
-                    
+                            print(
+                                "Discarding stale or malformed feedback for generation "
+                                f"{data.get('generation')}; expected "
+                                f"{evolution_state['current_generation']}."
+                            )
+                    else:
+                        print(f"Unknown message type: {data}")
             except websockets.exceptions.ConnectionClosed:
                 print("WebSocket client disconnected")
-            except Exception as e:
-                print(f"WebSocket error: {e}")
+            except Exception as error:
+                print(f"WebSocket error: {error}")
             finally:
                 websocket_clients.discard(websocket)
-        
-        # FIXED: Create server inside async function
-        async def start_server_async():
+
+        async def serve_forever():
             server = await websockets.serve(websocket_handler, "localhost", 8765)
-            print("✅ WebSocket server started on ws://localhost:8765")
-            await asyncio.Future()  # Run forever
-        
-        # Create event loop for this thread
+            print("WebSocket server started on ws://localhost:8765")
+            async with server:
+                await server.wait_closed()
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        # Run the async server
+        websocket_loop = loop
         try:
-            loop.run_until_complete(start_server_async())
+            loop.run_until_complete(serve_forever())
         except KeyboardInterrupt:
-            print("🛑 WebSocket server stopped")
+            print("WebSocket server stopped")
         finally:
+            websocket_loop = None
             loop.close()
-    
+
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
     return server_thread
@@ -515,133 +495,36 @@ def start_websocket_server():
 def send_generation_data(generation_num, offspring, results, objective_batch, categories_list, inheritor_indices):
     """Prepare generation data and queue it for WebSocket transmission."""
     global generation_data_latest  # Access the global variable
-    
+
     print(f"🐍 PREPARING GENERATION {generation_num} DATA FOR WEBSOCKET...")
-    
-    generation_data = {
-        "type": "generation_data",
-        "generation": generation_num,
-        "timestamp": int(time.time() * 1000),
-        "solutions": []
-    }
-    
-    print(f"🐍 Processing {len(offspring)} solutions...")
-    
-    for j, (sol, (audio_stream, sample_rate, descriptors, source_tracks)) in enumerate(zip(offspring, results)):
-        assigned_category = get_assigned_category(sol)
-        actual_category = categories_list[j]
-        fitness = float(objective_batch[j])
-        is_inherited = j in inheritor_indices
-        
-        print(f"🐍 Converting audio for solution {j+1}/{len(offspring)}")
-        
-        # Convert audio to base64
-        try:
-            audio_base64 = audio_to_base64(audio_stream, sample_rate)
-            print(f"  ✅ Audio converted: {len(audio_base64)} chars")
-        except Exception as e:
-            print(f"  ❌ Audio conversion failed: {e}")
-            audio_base64 = ""
-        
-        solution_data = {
-            "id": j,
-            "solution_id": f"solution_{generation_num:03d}_{j:03d}",  # Unique solution ID
-            "parameters": {
-                "grain_duration": float(sol[0]),
-                "overlap": float(sol[1]),
-                "pitch_variance": float(sol[2]),
-                "start_offset_range": float(sol[3]),
-                "room_size": float(sol[4]),
-                "damping": float(sol[5]),
-                "wet_level": float(sol[6]),
-                "num_voices": int(sol[7]),
-                "low_cutoff_hz": float(sol[8]),
-                "high_cutoff_hz": float(sol[9]),
-                "ladder_resonance": float(sol[10])
-            },
-            "descriptors": {
-                "centroid": float(descriptors[0]),
-                "rolloff": float(descriptors[1]),
-                "spectral_flux": float(descriptors[2]),
-                "onset_rate": float(descriptors[3]),
-                "zcr": float(descriptors[4]) if len(descriptors) > 4 else 0.0
-            },
-            "fitness": fitness,
-            "assigned_category": assigned_category,
-            "actual_category": actual_category,
-            "inherited": is_inherited,
-            "sources": [os.path.basename(path) for path in source_tracks],
-            "audio": {
-                "data": audio_base64,
-                "sample_rate": int(sample_rate),
-                "duration": len(audio_stream) / sample_rate
-            }
-        }
-        
-        generation_data["solutions"].append(solution_data)
-        print(f"  ✅ Solution {j+1} data prepared")
-    
-    # Add generation statistics
-    generation_data["statistics"] = {
-        "total_solutions": len(offspring),
-        "inherited_count": len(inheritor_indices),
-        "new_count": len(offspring) - len(inheritor_indices),
-        "avg_fitness": float(np.mean(objective_batch)),
-        "best_fitness": float(np.max(objective_batch)),
-        "worst_fitness": float(np.min(objective_batch)),
-        "category_distribution": {
-            category: categories_list.count(category) 
-            for category in ['low', 'mid', 'high', 'rhythmic']
-        }
-    }
-    
-    # Store ONLY the latest generation (replaces previous)
+
+    generation_data = build_generation_payload(
+        generation_num,
+        offspring,
+        results,
+        objective_batch,
+        categories_list,
+        inheritor_indices,
+        get_assigned_category,
+        audio_to_base64,
+    )
+
     generation_data_latest = generation_data
     print(f"🐍 GENERATION {generation_num} DATA STORED AS LATEST")
     print(f"  - Solutions: {len(generation_data['solutions'])}")
-    print(f"  - Connected clients: {len(websocket_clients)}")
-    
-    # Broadcast immediately to connected clients
-    if websocket_clients:
-        print(f"🐍 BROADCASTING TO {len(websocket_clients)} CLIENTS...")
-        
-        # Create a simple broadcast function that works
-        def broadcast_now():
-            import asyncio
-            import json
-            
-            async def do_broadcast():
-                message = json.dumps(generation_data)
-                disconnected = set()
-                
-                for client in websocket_clients.copy():  # Use copy to avoid modification during iteration
-                    try:
-                        await client.send(message)
-                        print(f"  ✅ Sent to client {client.remote_address}")
-                    except Exception as e:
-                        print(f"  ❌ Failed to send to client: {e}")
-                        disconnected.add(client)
-                
-                # Remove disconnected clients
-                for client in disconnected:
-                    websocket_clients.discard(client)
-                
-                print(f"🐍 BROADCAST COMPLETE: {len(websocket_clients)} clients remain")
-            
-            # Get the event loop from the WebSocket server thread
+    loop = websocket_loop
+    if loop is not None and loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(
+            _broadcast_generation(generation_data), loop
+        )
+
+        def report_broadcast_error(completed):
             try:
-                # Use asyncio.run for a clean async execution
-                asyncio.run(do_broadcast())
-                
-            except Exception as e:
-                print(f"🐍 BROADCAST ERROR: {e}")
-        
-        # Run broadcast in a separate thread to avoid blocking
-        broadcast_thread = threading.Thread(target=broadcast_now)
-        broadcast_thread.start()
-    
-    else:
-        print("🐍 NO CLIENTS CONNECTED - LATEST DATA STORED FOR FUTURE CONNECTIONS")
+                completed.result()
+            except Exception as error:
+                print(f"WebSocket broadcast failed: {error}")
+
+        future.add_done_callback(report_broadcast_error)
     
     return generation_data
 
@@ -660,36 +543,17 @@ def prepare_and_send_initial_solutions(catalog_df):
     offspring = balanced_category_track_assignment(offspring, catalog_df)
     inheritor_indices = set()
 
-    # Synthesize
-    synthesis_jobs = []
-    for sol in offspring:
-        synthesis_jobs.append({
-            'solution': sol,
-            'catalog_data': catalog_df.to_dict('records')
-        })
-
-    results = []
-    max_workers = min(mp.cpu_count(), len(synthesis_jobs))
-
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_job, job) for job in synthesis_jobs]
-        for k, future in enumerate(futures):
-            try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                print(f"Error: {e}")
-                fallback_audio = np.zeros(48000)
-                fallback_sr = 48000
-                fallback_descriptors = np.zeros(5)
-                fallback_sources = ["fallback_track"]
-                results.append((fallback_audio, fallback_sr, fallback_descriptors, fallback_sources))
+    synthesis_jobs = _make_synthesis_jobs(
+        offspring, catalog_df, duration=2, include_audio=False
+    )
+    results = _run_synthesis_jobs(synthesis_jobs)
 
     # Calculate automatic fitness
     objective_batch = []
     categories_list = []
 
-    for j, (sol, (audio_stream, sample_rate, descriptors, source_tracks)) in enumerate(zip(offspring, results)):
+    for j, (sol, result) in enumerate(zip(offspring, results)):
+        descriptors = result[2]
         actual_category = assign_category_from_descriptors(descriptors)
         fitness = automatic_fitness(descriptors, actual_category)
         objective_batch.append(fitness)
@@ -698,7 +562,10 @@ def prepare_and_send_initial_solutions(catalog_df):
     objective_batch = np.array(objective_batch)
 
     # Select best 8
-    selected_indices = select_best_solutions(offspring, results, objective_batch, categories_list, n_select=8)
+    selected_indices = select_best_solutions(
+        offspring, objective_batch, categories_list, n_select=8
+    )
+    _render_selected_previews(selected_indices, synthesis_jobs, results)
 
     # Store pending data for evaluation when feedback arrives
     # Include selected_indices so we can map user feedback back to original solutions
@@ -729,7 +596,7 @@ def prepare_and_send_initial_solutions(catalog_df):
     evolution_state['current_generation'] = 0
     print("✅ INITIAL SOLUTIONS SENT TO JAVASCRIPT")
     return True
-def save_best_solutions(offspring, results, objective_batch, generation_num, save_dir="../data"):
+def save_best_solutions(offspring, results, objective_batch, generation_num, save_dir=DATA_DIR):
     """Save the best solutions of the generation to a JSON file."""
     os.makedirs(save_dir, exist_ok=True)
     best_idx = np.argmax(objective_batch)
@@ -752,11 +619,26 @@ def save_best_solutions(offspring, results, objective_batch, generation_num, sav
     print(f"💾 Best solution of generation {generation_num} saved to {save_path}")
 
 
-def run_evolution_cycle(user_feedback=None, num_generations=1):
+def run_evolution_cycle(user_feedback=None):
     """Run one evolution cycle - generate ONE generation and wait for feedback."""
     
     scheduler = evolution_state['scheduler']
     catalog_df = evolution_state['catalog_df']
+
+    if user_feedback is not None:
+        pending = evolution_state.get('pending_generation_data') or {}
+        expected_count = len(pending.get('selected_indices', []))
+        if not _feedback_matches_generation(
+            user_feedback,
+            evolution_state['current_generation'],
+            expected_count,
+        ):
+            print(
+                "Discarding stale or malformed feedback before evolution: "
+                f"received generation {user_feedback.get('generation') if isinstance(user_feedback, dict) else None}, "
+                f"expected {evolution_state['current_generation']}."
+            )
+            return
     
     # STEP 1: Process user feedback for PREVIOUS generation (if exists)
     if user_feedback and evolution_state['pending_generation_data'] is not None:
@@ -782,10 +664,15 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
                 user_score = feedback_item.get('user_score', 0.0)
                 
                 if solution_id:
-                    # Extract the sent position from solution_id (the last 3 digits)
-                    # solution_002_003 -> sent_position = 3
                     try:
-                        sent_position = int(solution_id.split('_')[-1])
+                        parts = solution_id.split('_')
+                        if len(parts) != 3 or parts[0] != 'solution':
+                            raise ValueError(f"Unexpected solution ID format: {solution_id}")
+                        solution_generation = int(parts[1])
+                        sent_position = int(parts[2])
+                        if solution_generation != evolution_state['current_generation']:
+                            print(f"  ⚠️ Ignoring feedback from generation {solution_generation}")
+                            continue
                         # Map back to original index using selected_indices
                         if sent_position < len(selected_indices):
                             original_index = selected_indices[sent_position]
@@ -914,7 +801,7 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
         # Save best solution (from the 8 selected)
         offspring_selected = [offspring[i] for i in selected_indices]
         results_selected = [results[i] for i in selected_indices]
-        save_best_solutions(offspring_selected, results_selected, objective_batch, evolution_state['current_generation'], save_dir="../data")
+        save_best_solutions(offspring_selected, results_selected, objective_batch, evolution_state['current_generation'], save_dir=DATA_DIR)
         
         # Clear pending data
         evolution_state['pending_generation_data'] = None
@@ -949,33 +836,11 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
         category_assignments[cat] = category_assignments.get(cat, 0) + 1
     print(f"Category distribution: {category_assignments}")
     
-    # Synthesize solutions
-    synthesis_jobs = []
-    for sol in offspring:
-        synthesis_jobs.append({
-            'solution': sol,
-            'catalog_data': catalog_df.to_dict('records')
-        })
-    
-    results = []
     print("Starting synthesis (multiprocessing)")
-    max_workers = min(mp.cpu_count(), len(synthesis_jobs))
-    
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_job, job) for job in synthesis_jobs]
-        
-        for k, future in enumerate(futures):
-            try:
-                result = future.result()  
-                results.append(result)
-                print(f"Completed job {k+1}/{len(futures)}")
-            except Exception as e:
-                print(f"Error processing job {k}: {e}")
-                fallback_audio = np.zeros(48000)
-                fallback_sr = 48000
-                fallback_descriptors = np.zeros(5)
-                fallback_sources = ["fallback_track"]
-                results.append((fallback_audio, fallback_sr, fallback_descriptors, fallback_sources))
+    synthesis_jobs = _make_synthesis_jobs(
+        offspring, catalog_df, duration=2, include_audio=False
+    )
+    results = _run_synthesis_jobs(synthesis_jobs)
     
     # Calculate AUTOMATIC fitness only (no user feedback yet for THIS generation)
     objective_batch = []
@@ -983,7 +848,8 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
     
     print(f"\n--- Generation {generation_num} Solutions (awaiting feedback) ---")
     
-    for j, (sol, (audio_stream, sample_rate, descriptors, source_tracks)) in enumerate(zip(offspring, results)):
+    for j, (sol, result) in enumerate(zip(offspring, results)):
+        descriptors = result[2]
         actual_category = assign_category_from_descriptors(descriptors)
         fitness = automatic_fitness(descriptors, actual_category)
         
@@ -995,7 +861,10 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
     objective_batch = np.array(objective_batch)
     
 # STEP 5: Select best 8 first (needed for storing mapping)
-    selected_indices = select_best_solutions(offspring, results, objective_batch, categories_list, n_select=8)
+    selected_indices = select_best_solutions(
+        offspring, objective_batch, categories_list, n_select=8
+    )
+    _render_selected_previews(selected_indices, synthesis_jobs, results)
 
     # Store generation data for later evaluation (when feedback arrives)
     # Include selected_indices so we can map user feedback back to original solutions
@@ -1030,7 +899,7 @@ def run_evolution_cycle(user_feedback=None, num_generations=1):
     
     print(f"\n🎯 Generation {generation_num} sent to user - Waiting for feedback...")
 
-def select_best_solutions(offspring, results, objective_batch, categories_list, n_select=8):
+def select_best_solutions(offspring, objective_batch, categories_list, n_select=8):
     """Select n_select best solutions, evenly distributed among categories."""
     categories = ['low', 'mid', 'high', 'rhythmic']
     per_cat = n_select // len(categories)
@@ -1067,7 +936,8 @@ def main():
     
     # Load catalog
     try:
-        catalog_df = pd.read_csv("../data/audio_analysis.csv")
+        catalog_path = os.path.join(DATA_DIR, "audio_analysis.csv")
+        catalog_df = pd.read_csv(catalog_path)
         print(f"Loaded audio catalog with {len(catalog_df)} tracks")
         print(f"Category distribution: {catalog_df['dominant_category'].value_counts().to_dict()}")
         
@@ -1078,14 +948,17 @@ def main():
     except Exception as e:
         print(f"Error loading audio catalog: {e}")
         print("Running analyze_folder to create catalog...")
-        catalog_df = analyze_folder("../data/audio", "../data/audio_analysis.csv")
+        catalog_df = analyze_folder(
+            os.path.join(DATA_DIR, "audio"),
+            os.path.join(DATA_DIR, "audio_analysis.csv"),
+        )
         
         scheduler = Scheduler(archive, emitters)
         evolution_state['scheduler'] = scheduler
         evolution_state['catalog_df'] = catalog_df
     
     # Create data directory
-    data_dir = '../data'
+    data_dir = DATA_DIR
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
         print(f"Created directory: {data_dir}")
@@ -1113,6 +986,18 @@ def main():
             try:
                 print(f"⏳ Waiting for user feedback... ({len(websocket_clients)} clients connected)")
                 user_feedback = user_feedback_queue.get(timeout=10.0)
+
+                pending = evolution_state.get('pending_generation_data') or {}
+                expected_count = len(pending.get('selected_indices', []))
+                if not _feedback_matches_generation(
+                    user_feedback,
+                    evolution_state['current_generation'],
+                    expected_count,
+                ):
+                    print(
+                        "Discarding queued feedback because its generation is no longer current."
+                    )
+                    continue
 
                
                 try:
@@ -1149,7 +1034,7 @@ def main():
                     print(f"🧬 STARTING EVOLUTION WITH AUTOMATIC FITNESS...")
                 
                 # Run evolution cycle (will use user feedback if available, auto fitness otherwise)
-                run_evolution_cycle(user_feedback=user_feedback, num_generations=1)
+                run_evolution_cycle(user_feedback=user_feedback)
                 
             except queue.Empty:
                 # No feedback received, just continue waiting
@@ -1164,6 +1049,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

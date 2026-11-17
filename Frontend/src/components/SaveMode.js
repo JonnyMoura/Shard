@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Library } from './Library.js'; // Add this line
 import { Button } from './Button.js';
+import { cancelIcon, confirmIcon } from '../assets.js';
 
 export class SaveMode {
     constructor(mainRenderer, mainCamera, controls, particleSystem, library = null) {
@@ -169,7 +169,7 @@ export class SaveMode {
         
         // NEW: Start pulsating animation for solids
         this._startSolidPulsing();
-        
+
         console.log('✅ Entered Save Mode - All movement stopped, solids frozen in place');
     }
     
@@ -272,6 +272,7 @@ export class SaveMode {
                 // Get the ORIGINAL cached material
                 const originalMaterial = this._globalMaterialCache.get(child);
                 if (originalMaterial) {
+                    this._disposeTemporaryMaterial(child.material, originalMaterial);
                     child.material = originalMaterial;
                     restoredMaterials++;
                 }
@@ -301,22 +302,6 @@ export class SaveMode {
         }
         
         console.log(`✅ Cleaned ${cleanedMeshes} meshes, restored ${restoredMaterials} materials`);
-    }
-
-    forceReset({ restoreMaterials = true } = {}) {
-        console.log('🔄 Force reset called');
-        
-        // Only do cleanup if we're actually in save mode
-        if (!this.isSaveMode) {
-            console.log('⏭️ Not in save mode, skipping reset');
-            return;
-        }
-        
-        // Use the same atomic cleanup
-        this._atomicMaterialCleanup();
-        
-        this._hoverCooldown = new WeakMap();
-        this.selectedSolids = [];
     }
 
     //Helper function to create Bounding boxes
@@ -487,6 +472,7 @@ export class SaveMode {
                 if (child.isMesh) {
                     const originalMaterial = this._globalMaterialCache.get(child);
                     if (originalMaterial) {
+                        this._disposeTemporaryMaterial(child.material, originalMaterial);
                         child.material = originalMaterial;
                     }
                     
@@ -1102,7 +1088,7 @@ showErrorMessage(text) {
         const saveBtn = document.createElement('button');
         saveBtn.className = 'name-input-btn save';
         saveBtn.title = 'Save';
-        saveBtn.innerHTML = '<img src="/assets/icons/Confirm.svg" alt="Save" class="name-input-icon">';
+        saveBtn.innerHTML = `<img src="${confirmIcon}" alt="Save" class="name-input-icon">`;
         saveBtn.onclick = () => {
             const name = input.value.trim();
             if (name) {
@@ -1118,7 +1104,7 @@ showErrorMessage(text) {
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'name-input-btn cancel';
         cancelBtn.title = 'Cancel';
-        cancelBtn.innerHTML = '<img src="/assets/icons/Cancel.svg" alt="Cancel" class="name-input-icon">';
+        cancelBtn.innerHTML = `<img src="${cancelIcon}" alt="Cancel" class="name-input-icon">`;
         cancelBtn.onclick = () => {
             overlay.remove();
         };
@@ -1389,6 +1375,7 @@ showErrorMessage(text) {
                 // CRITICAL: Always restore to the ORIGINAL material we cached on enter
                 const originalMaterial = child.userData.__saveModeOriginalMaterial;
                 if (originalMaterial) {
+                    this._disposeTemporaryMaterial(child.material, originalMaterial);
                     child.material = originalMaterial;
                 }
 
@@ -1453,7 +1440,16 @@ showErrorMessage(text) {
         
         // Clone the ORIGINAL and tint it
         const tinted = this._createTintedMaterial(originalMaterial, intensity);
+        this._disposeTemporaryMaterial(child.material, originalMaterial);
         child.material = tinted;
+    }
+
+    _disposeTemporaryMaterial(current, original) {
+        const originals = new Set(Array.isArray(original) ? original : [original]);
+        const materials = Array.isArray(current) ? current : [current];
+        materials.forEach(material => {
+            if (material && !originals.has(material)) material.dispose();
+        });
     }
 
     _createTintedMaterial(source, intensity) {
@@ -1495,6 +1491,7 @@ showErrorMessage(text) {
                 if (child.isMesh) {
                     const originalMaterial = this._globalMaterialCache.get(child);
                     if (originalMaterial) {
+                        this._disposeTemporaryMaterial(child.material, originalMaterial);
                         child.material = originalMaterial;
                     }
                     
@@ -1522,7 +1519,7 @@ showErrorMessage(text) {
         // Store original emissive intensities and start animation
         this._pulseAnimationId = null;
         this._originalEmissiveIntensities = new WeakMap();
-        
+
         // Cache original values
         this.solidMeshes.forEach(solid => {
             solid.traverse((child) => {
@@ -1534,19 +1531,19 @@ showErrorMessage(text) {
                 }
             });
         });
-        
+
         // Start the pulse animation loop
         const startTime = performance.now();
         const pulseDuration = 1200; // ms for one full pulse cycle (faster for visibility)
         const pulseAmplitude = 0.7; // Strong emissive intensity increase for visible glow
-        
+
         const animatePulse = () => {
             if (!this.isSaveMode) return; // Stop if no longer in save mode
-            
+
             const elapsed = performance.now() - startTime;
             // Smooth sine wave pulse (0 to 1 to 0)
             const pulseValue = (Math.sin((elapsed / pulseDuration) * Math.PI * 2) + 1) / 2;
-            
+
             this.solidMeshes.forEach(solid => {
                 solid.traverse((child) => {
                     if (child.isMesh && child.material) {
@@ -1559,14 +1556,14 @@ showErrorMessage(text) {
                     }
                 });
             });
-            
+
             this._pulseAnimationId = requestAnimationFrame(animatePulse);
         };
-        
+
         this._pulseAnimationId = requestAnimationFrame(animatePulse);
         console.log('✨ Started solid pulsing animation');
     }
-    
+
     // NEW: Stop pulsating animation and restore original values
     _stopSolidPulsing() {
         // Cancel animation
@@ -1574,7 +1571,7 @@ showErrorMessage(text) {
             cancelAnimationFrame(this._pulseAnimationId);
             this._pulseAnimationId = null;
         }
-        
+
         // Restore original emissive intensities
         if (this._originalEmissiveIntensities) {
             this.solidMeshes.forEach(solid => {
@@ -1589,7 +1586,7 @@ showErrorMessage(text) {
             });
             this._originalEmissiveIntensities = null;
         }
-        
+
         console.log('✨ Stopped solid pulsing animation');
     }
 }

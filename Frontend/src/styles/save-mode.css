@@ -1,0 +1,263 @@
+/* Floating buttons (for save mode) */
+.save-to-library-btn {
+    position: absolute;
+    z-index: 2000;
+    margin: 5px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 5px;
+    background-color: #ffc107;
+    color: black;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.save-to-library-btn:hover {
+    background-color: #e0a800;
+}
+
+.save-combination-btn {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3000;
+    padding: 14px 28px;
+    background: rgba(var(--color-cyan-rgb), 0.05); /* Subtle background */
+    color: var(--color-cyan);
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.4); /* Standard border */
+    border-radius: 25px;
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.12); /* Reduced glow */
+    transition: all 0.3s ease;
+    text-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.3);
+    animation: saveBtnPulse 2.5s ease-in-out infinite; /* Slower, subtler pulse */
+}
+
+@keyframes saveBtnPulse {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.12);
+        border-color: rgba(var(--color-cyan-rgb), 0.4);
+    }
+    50% {
+        box-shadow: 0 0 12px rgba(var(--color-cyan-rgb), 0.2);
+        border-color: rgba(var(--color-cyan-rgb), 0.55);
+    }
+}
+
+.save-combination-btn:hover {
+    background: rgba(var(--color-cyan-rgb), 0.1) !important; /* CHANGED: Cyan hover background */
+    color: var(--color-cyan);
+    border-color: rgba(var(--color-cyan-rgb), 0.6) !important; /* CHANGED: Brighter cyan */
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.6),
+                 0 0 12px rgba(var(--color-cyan-rgb), 0.4);
+    filter: brightness(1.4);
+    transform: translateX(-50%) translateY(-2px) !important; /* CHANGED: Lift effect */
+
+}
+
+.save-combination-btn:active {
+    transform: translateX(-50%) translateY(0px) !important;
+    box-shadow: 0 2px 8px rgba(var(--color-cyan-rgb), 0.2) !important;
+}
+
+/* 3D Save to Library Button */
+.save-to-library-btn-3d {
+    position: absolute;
+    z-index: 2000;
+    background: transparent !important;
+    border: none !important;
+    cursor: pointer;
+    border-radius: 0;
+    transition: all 0.2s ease;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+/* REMOVED: No 2D icon pseudo-elements */
+.save-to-library-btn-3d::before,
+.save-to-library-btn-3d::after {
+    display: none;
+}
+
+/* Show glow on hover - radiating from center with filled core */
+.save-to-library-btn-3d:hover {
+    /* CHANGED: Add inset shadow to fill the center + outward glow */
+    box-shadow: inset 0 0 calc(var(--btn-size, 60px) * 0.5) calc(var(--btn-size, 60px) * 0.2) rgba(0, 255, 170, 0.5),
+                0 0 calc(var(--btn-size, 60px) * 0.333) rgba(0, 255, 170, 0.6),
+                0 0 calc(var(--btn-size, 60px) * 0.5) rgba(0, 255, 170, 0.4),
+                0 0 calc(var(--btn-size, 60px) * 0.667) rgba(0, 255, 170, 0.2);
+    border-radius: 50%; /* CHANGED: Circular to match the radial glow */
+    border: none !important;
+}
+
+/* Selection styles */
+.selected-solid {
+    outline: 3px solid #00ff00 !important;
+    outline-offset: 2px;
+}
+
+.hovered-solid {
+    outline: 2px solid #00aaff !important;
+    outline-offset: 1px;
+}
+
+.selected-solid.hovered-aura {
+    box-shadow: 0 0 16px 6px rgba(var(--color-mint-rgb), 0.4), 0 0 8px 2px rgba(var(--color-mint-rgb), 0.3) !important; /* CHANGED: reduced opacity from 1.0 to 0.4/0.3 */
+    outline: 3px solid rgba(var(--color-mint-rgb), 0.6) !important; /* CHANGED: reduced opacity from 1.0 to 0.6 */
+    outline-offset: 2px;
+}
+
+/* Name input overlay */
+.name-input-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5000;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.name-input-widget {
+    background: rgba(var(--color-navy-rgb), 0.95);
+    padding: 32px 28px 24px 28px;
+    border-radius: 25px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    text-align: center;
+    min-width: 250px;
+    font-family: var(--font-ui);
+    color: var(--color-cyan); /* CHANGED: Cyan text */
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.2); /* CHANGED: Cyan border */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.name-input-widget h3 {
+    margin: 0 0 20px 0;
+    color: var(--color-cyan); /* CHANGED: Cyan heading */
+    font-size: 1.2em;
+    font-family: var(--font-ui);
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.2); /* CHANGED: Cyan glow */
+}
+
+.name-input-widget input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.3); /* CHANGED: Cyan border */
+    border-radius: 15px;
+    font-size: 1em;
+    margin-bottom: 20px;
+    box-sizing: border-box;
+    background: rgba(var(--color-navy-rgb), 0.85);
+    color: var(--color-cyan); /* CHANGED: Cyan text */
+    font-family: var(--font-ui);
+    transition: all 0.3s ease;
+    font-weight: 300;
+}
+
+.name-input-widget input::placeholder {
+    color: rgba(var(--color-cyan-rgb), 0.5); /* CHANGED: Cyan placeholder */
+}
+
+.name-input-widget input:focus {
+    outline: none;
+    border-color: rgba(var(--color-cyan-rgb), 0.6); /* CHANGED: Brighter cyan on focus */
+    box-shadow: 0 0 12px rgba(var(--color-cyan-rgb), 0.3);
+    background: rgba(var(--color-navy-rgb), 0.95);
+}
+
+.name-input-buttons {
+    display: flex;
+    gap: 56px;
+    justify-content: center;
+}
+
+.name-input-btn {
+    padding: 12px 24px;
+    border: 1px solid rgba(var(--color-cyan-rgb), 0.3); /* CHANGED: Cyan border */
+    border-radius: 25px;
+    font-size: 1em;
+    cursor: pointer;
+    font-family: var(--font-ui);
+    background: transparent; /* CHANGED: Transparent background */
+    color: var(--color-cyan); /* CHANGED: Cyan text */
+    transition: all 0.3s ease;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 4px rgba(var(--color-cyan-rgb), 0.3); /* CHANGED: Cyan glow */
+    min-width: 48px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.name-input-btn.save {
+    color: var(--color-mint); /* CHANGED: Green from palette */
+    border-color: rgba(var(--color-mint-rgb), 0.3); /* ADD THIS LINE - Green border */
+    text-shadow: 0 0 4px rgba(var(--color-mint-rgb), 0.3); /* CHANGED: Green glow */
+}
+
+.name-input-btn.save:hover {
+    background: rgba(var(--color-mint-rgb), 0.15); /* CHANGED: Green highlight */
+    color: var(--color-mint);
+    border-color: rgba(var(--color-mint-rgb), 0.6); /* ADD THIS LINE - Brighter green */
+    text-shadow: 0 0 8px rgba(var(--color-mint-rgb), 0.6),
+                 0 0 12px rgba(var(--color-mint-rgb), 0.4);
+    filter: brightness(1.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(var(--color-mint-rgb), 0.2);
+}
+
+.name-input-btn.cancel {
+    background: transparent;
+    color: var(--color-cyan); /* CHANGED: Cyan */
+
+}
+
+.name-input-btn.cancel:hover {
+    background: rgba(255, 0, 0, 0.1); /* Subtle red tint */
+    color: var(--color-danger); /* Light red */
+
+    text-shadow: 0 0 8px rgba(var(--color-danger-rgb), 0.4);
+    filter: brightness(1.4);
+    transform: translateY(-2px);
+}
+
+/* Name input button icons */
+.name-input-icon {
+    width: 24px;
+    height: 24px;
+    filter: brightness(0) saturate(100%) invert(93%) sepia(14%) saturate(1048%) hue-rotate(154deg) brightness(103%) contrast(100%);
+    transition: filter 0.2s;
+}
+
+.name-input-btn.save .name-input-icon {
+    /* Green icon for save button */
+    filter: brightness(0) saturate(100%) invert(75%) sepia(24%) saturate(744%) hue-rotate(126deg) brightness(95%) contrast(85%);
+}
+
+.name-input-btn:hover .name-input-icon {
+    /* Brighter on hover */
+    filter: brightness(0) saturate(100%) invert(100%) sepia(8%) saturate(800%) hue-rotate(154deg) brightness(108%) contrast(100%);
+}
+
+.name-input-btn.save:hover .name-input-icon {
+    /* Brighter green on save hover */
+    filter: brightness(0) saturate(100%) invert(80%) sepia(24%) saturate(900%) hue-rotate(126deg) brightness(100%) contrast(90%);
+}

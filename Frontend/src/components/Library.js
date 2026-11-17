@@ -1,5 +1,16 @@
 import * as THREE from 'three';
 import { Button } from './Button.js';
+import {
+    exportIcon,
+    playIcon as playIconAsset,
+    stopIcon as stopIconAsset
+} from '../assets.js';
+import { createGeometricSolid } from './GeometricSolid.js';
+import {
+    audioBufferToWav,
+    mixAudioBuffers,
+    sanitizeFilename
+} from '../audio/audio-export.js';
 
 export class Library {
     constructor(particleSystem, scene, camera, renderer, controls) {
@@ -10,7 +21,8 @@ export class Library {
         this.controls = controls;
 
         // Saved items here: { id, type: 'solution'|'combination', name, description, category, items?, meshSnapshot:Object3D }
-        this.libraryData = [];
+        this.storageKey = 'shard.saved-library.v1';
+        this.libraryData = this._loadLibraryData();
 
         // Space mode state
         this.inSpace = false;
@@ -44,6 +56,14 @@ export class Library {
 
         // NEW: Global material cache for library items (like SaveMode)
         this._globalLibraryMaterialCache = new WeakMap();
+        this._libraryGrainGeometry = new THREE.SphereGeometry(0.09, 8, 8);
+        this._libraryGrainMaterial = new THREE.MeshStandardMaterial({
+            color: 0xe0dbc1,
+            emissive: 0xe0dbc1,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.8
+        });
 
         // UI entry point
         this.createLibraryButton();
@@ -74,6 +94,88 @@ export class Library {
         // Track playing audio in library
         this._playingIds = new Set();
         this._playingMeshes = new Map(); // Map<id, mesh> for highlighting
+    }
+
+    _serializeSolutionData(solution) {
+        if (!solution) return null;
+        return {
+            id: solution.id ?? null,
+            generation: solution.generation ?? 0,
+            parameters: solution.parameters || {},
+            descriptors: solution.descriptors || {},
+            actual_category: solution.actual_category || solution.category || 'mid',
+            assigned_category: solution.assigned_category || '',
+            fitness: Number.isFinite(solution.fitness) ? solution.fitness : 0
+        };
+    }
+
+    _loadLibraryData() {
+        try {
+            const saved = localStorage.getItem(this.storageKey);
+            if (!saved) return [];
+            const records = JSON.parse(saved);
+            if (!Array.isArray(records)) {
+                throw new TypeError('Saved library data must be an array');
+            }
+            return records.map(record => ({
+                ...record,
+                meshSnapshot: record.snapshotData
+                    ? createGeometricSolid(record.snapshotData)
+                    : null
+            }));
+        } catch (error) {
+            console.error('Could not restore the saved library:', error);
+            return [];
+        }
+    }
+
+    _persistLibraryData() {
+        try {
+            const records = this.libraryData.map(item => ({
+                id: item.id,
+                type: item.type,
+                name: item.name,
+                description: item.description,
+                category: item.category,
+                solutionId: item.solutionId,
+                generation: item.generation,
+                solutionData: this._serializeSolutionData(item.solutionData),
+                snapshotData: this._serializeSolutionData(item.snapshotData),
+                items: item.items?.map(entry => ({
+                    id: entry.id,
+                    solutionId: entry.solutionId,
+                    name: entry.name,
+                    category: entry.category,
+                    generation: entry.generation ?? entry.solutionData?.generation ?? 0,
+                    solutionData: this._serializeSolutionData(entry.solutionData),
+                    audioParams: entry.audioParams || {},
+                    descriptors: entry.descriptors || {}
+                }))
+            }));
+            localStorage.setItem(this.storageKey, JSON.stringify(records));
+        } catch (error) {
+            console.error('Could not persist the saved library:', error);
+        }
+    }
+
+    _disposeMaterial(current, original) {
+        const originalMaterials = new Set(
+            Array.isArray(original) ? original : [original]
+        );
+        const currentMaterials = Array.isArray(current) ? current : [current];
+        currentMaterials.forEach(material => {
+            if (material && !originalMaterials.has(material)) material.dispose();
+        });
+    }
+
+    _disposeGridObject(object) {
+        object.traverse(child => {
+            if (!child.isMesh) return;
+            if (child.geometry !== this._libraryGrainGeometry) {
+                child.geometry?.dispose();
+            }
+            this._disposeMaterial(child.material, this._libraryGrainMaterial);
+        });
     }
 
     // Public: toggle
@@ -112,6 +214,7 @@ export class Library {
                         this._hiddenMainGrains.push({ grain: g, prev: g.visible });
                         g.visible = false;
                     });
+                    this.particleSystem.syncPeakGrains(peak);
                 });
             }
         } catch (e) {}
@@ -170,6 +273,7 @@ export class Library {
         try {
             this._hiddenMainGrains.forEach(({ grain, prev }) => { if (grain) grain.visible = prev; });
             this._hiddenMainGrains = [];
+            this.particleSystem?.peaks?.forEach(peak => this.particleSystem.syncPeakGrains(peak));
         } catch (e) {}
 
         // Restore camera
@@ -258,9 +362,17 @@ export class Library {
         if (sourceMesh) {
             const materialsSnapshot = item.materialsSnapshot || this._captureMaterialsFromSolid(sourceMesh);
             record.meshSnapshot = this._cloneSolid(sourceMesh, materialsSnapshot);
+            const solution = sourceMesh.userData.solution || {
+                id: sourceMesh.userData.solutionId || record.id,
+                parameters: sourceMesh.userData.audioParams || item.audioParams || {},
+                descriptors: sourceMesh.userData.descriptors || item.descriptors || {},
+                actual_category: categoryValue || 'mid'
+            };
+            record.snapshotData = this._serializeSolutionData(solution);
         }
 
         this.libraryData.push(record);
+        this._persistLibraryData();
 
         // Live update grid if in space
         if (this.inSpace) this._buildGridFromLibraryData();
@@ -329,7 +441,11 @@ export class Library {
 
     _buildGridFromLibraryData() {
         // Clear current group
-        while (this.group.children.length) this.group.remove(this.group.children[0]);
+        while (this.group.children.length) {
+            const child = this.group.children[0];
+            this._disposeGridObject(child);
+            this.group.remove(child);
+        }
         this._libItems = [];
         
         // NEW: Clear material cache for fresh start
@@ -346,7 +462,14 @@ export class Library {
             const snap = item.meshSnapshot ? item.meshSnapshot.clone(true) : null;
             if (!snap) return;
 
-            snap.traverse(ch => { if (ch.isMesh) ch.matrixAutoUpdate = true; });
+            snap.traverse(ch => {
+                if (!ch.isMesh) return;
+                ch.matrixAutoUpdate = true;
+                ch.geometry = ch.geometry?.clone();
+                ch.material = Array.isArray(ch.material)
+                    ? ch.material.map(material => material.clone())
+                    : ch.material?.clone();
+            });
             snap.updateMatrixWorld(true);
             
             // NEW: Cache original materials immediately after cloning
@@ -443,18 +566,11 @@ export class Library {
         const minRadius = 0.8 * params.baseRadius;
         const maxRadius = params.baseRadius * 2.5;
 
-        const sharedGeom = new THREE.SphereGeometry(0.09, 8, 8);
-        const makeMaterial = () => new THREE.MeshStandardMaterial({
-            color: 0xe0dbc1,
-            emissive: 0xe0dbc1,
-            emissiveIntensity: 0.3,
-            transparent: true,
-            opacity: 0.8
-        });
-
         for (let j = 0; j < count; j++) {
-            const mat = makeMaterial();
-            const grain = new THREE.Mesh(sharedGeom, mat);
+            const grain = new THREE.Mesh(
+                this._libraryGrainGeometry,
+                this._libraryGrainMaterial
+            );
             grain.layers.enable(1);
 
             const heightFactor = Math.random();
@@ -847,7 +963,11 @@ export class Library {
             const clone = src.clone(true);
             this._applyMaterialsToClone(src, clone, materialsSnapshot);
 
-            clone.traverse(n => { if (n.isMesh) n.matrixAutoUpdate = true; });
+            clone.traverse(n => {
+                if (!n.isMesh) return;
+                n.geometry = n.geometry?.clone();
+                n.matrixAutoUpdate = true;
+            });
             clone.updateMatrixWorld(true);
 
             return clone;
@@ -918,18 +1038,20 @@ export class Library {
 
         this._panel.innerHTML = `
             <button class="library-close-btn" type="button" title="Close">×</button>
-            <h3 class="library-name" data-editable="name" title="Click to edit name">
-                ${this._escapeHTML(name)}
-            </h3>
-            ${categoryLabel ? `<div class="library-category-label">${this._escapeHTML(categoryLabel)}</div>` : ''}
+            <div class="library-panel-heading">
+                <h3 class="library-name" data-editable="name" title="Click to edit name">
+                    ${this._escapeHTML(name)}
+                </h3>
+                ${categoryLabel ? `<div class="library-category-label">${this._escapeHTML(categoryLabel)}</div>` : ''}
+            </div>
             ${descHTML}
             <div class="library-info-actions">
                 <button class="library-info-btn-play" type="button" data-action="play" title="Play">
-                    <img src="/assets/icons/Play.svg" alt="Play" class="library-btn-icon-play">
+                    <img src="${playIconAsset}" alt="Play" class="library-btn-icon-play">
                     <span>Play Sound</span>
                 </button>
                 <button class="library-info-btn secondary" type="button" data-action="export" title="Export">
-                    <img src="/assets/icons/Export.svg" alt="Export" class="library-btn-icon">
+                    <img src="${exportIcon}" alt="Export" class="library-btn-icon">
                     <span>Export Audio</span>
                 </button>
             </div>
@@ -1016,7 +1138,11 @@ export class Library {
         if (this._panel) {
             this._panel.classList.remove('visible');
             this._panelEditDepth = 0;
-            this._panel.classList.remove('editing-active');
+            this._panel.classList.remove(
+                'editing-active',
+                'editing-name',
+                'editing-description'
+            );
             this._pointerOverPanel = false;
             setTimeout(() => {
                 if (!this._panel.classList.contains('visible')) {
@@ -1043,7 +1169,7 @@ export class Library {
     _inlineEditName(container, item) {
         if (this._isEditingName) return;
         this._isEditingName = true;
-        this._beginPanelEdit();
+        this._beginPanelEdit('name');
 
         const current = this._sanitizeName(item.name);
         container.textContent = '';
@@ -1069,13 +1195,16 @@ export class Library {
             if (closed) return;
             closed = true;
             this._isEditingName = false;
-            this._endPanelEdit();
+            this._endPanelEdit('name');
 
             if (!container.isConnected) return;
             const value = commit
                 ? this._sanitizeName(input.value)
                 : current;
-            if (commit) item.name = value;
+            if (commit) {
+                item.name = value;
+                this._persistLibraryData();
+            }
             this._applyNameLayout(container, value);
         };
 
@@ -1093,7 +1222,7 @@ export class Library {
     _inlineEditDescription(container, item) {
         if (this._isEditingDesc) return;
         this._isEditingDesc = true;
-        this._beginPanelEdit();
+        this._beginPanelEdit('description');
 
         const current = this._sanitizeDescription(item.description);
         container.textContent = '';
@@ -1127,13 +1256,16 @@ export class Library {
             if (closed) return;
             closed = true;
             this._isEditingDesc = false;
-            this._endPanelEdit();
+            this._endPanelEdit('description');
 
             if (!container.isConnected) return;
             const value = commit
                 ? this._sanitizeDescription(ta.value)
                 : current;
-            if (commit) item.description = value;
+            if (commit) {
+                item.description = value;
+                this._persistLibraryData();
+            }
             if (value) {
                 container.classList.remove('library-desc-placeholder');
                 container.classList.add('library-description', 'committed');
@@ -1283,12 +1415,12 @@ export class Library {
         if (!playBtn || !playIcon || !playText) return;
 
         if (isPlaying) {
-            playIcon.src = '/assets/icons/Stop.svg';
+            playIcon.src = stopIconAsset;
             playIcon.alt = 'Stop';
             playText.textContent = 'Stop Sound';
             playBtn.classList.add('playing');
         } else {
-            playIcon.src = '/assets/icons/Play.svg';
+            playIcon.src = playIconAsset;
             playIcon.alt = 'Play';
             playText.textContent = 'Play Sound';
             playBtn.classList.remove('playing');
@@ -1311,7 +1443,7 @@ export class Library {
 
             try {
                 // Convert AudioBuffer to WAV format
-                const wavBlob = this._audioBufferToWav(audioBuffer);
+                const wavBlob = audioBufferToWav(audioBuffer);
                 
                 // Create download link
                 const url = URL.createObjectURL(wavBlob);
@@ -1351,8 +1483,8 @@ export class Library {
             }
 
             // Mix all buffers
-            const mixedBuffer = this._mixAudioBuffers(buffers, sc.audioContext);
-            const filename = `${this._sanitizeFilename(item.name || 'combination')}.wav`;
+            const mixedBuffer = mixAudioBuffers(buffers, sc.audioContext);
+            const filename = `${sanitizeFilename(item.name || 'combination')}.wav`;
             downloadAudio(mixedBuffer, filename);
 
         } else {
@@ -1369,119 +1501,9 @@ export class Library {
                 return;
             }
 
-            const filename = `${this._sanitizeFilename(item.name || `solution_${baseId}`)}.wav`;
+            const filename = `${sanitizeFilename(item.name || `solution_${baseId}`)}.wav`;
             downloadAudio(sourceData.buffer, filename);
         }
-    }
-
-    _sanitizeFilename(name) {
-        // Remove invalid filename characters
-        return String(name)
-            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-            .replace(/\s+/g, '_')
-            .substring(0, 100);
-    }
-
-    _audioBufferToWav(audioBuffer) {
-        const numberOfChannels = audioBuffer.numberOfChannels;
-        const sampleRate = audioBuffer.sampleRate;
-        const format = 1; // PCM
-        const bitDepth = 16;
-
-        const bytesPerSample = bitDepth / 8;
-        const blockAlign = numberOfChannels * bytesPerSample;
-
-        const samples = audioBuffer.length;
-        const dataSize = samples * blockAlign;
-        const bufferSize = 44 + dataSize;
-
-        const buffer = new ArrayBuffer(bufferSize);
-        const view = new DataView(buffer);
-
-        // Write WAV header
-        const writeString = (offset, string) => {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
-        };
-
-        writeString(0, 'RIFF');
-        view.setUint32(4, bufferSize - 8, true);
-        writeString(8, 'WAVE');
-        writeString(12, 'fmt ');
-        view.setUint32(16, 16, true); // fmt chunk size
-        view.setUint16(20, format, true);
-        view.setUint16(22, numberOfChannels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * blockAlign, true);
-        view.setUint16(32, blockAlign, true);
-        view.setUint16(34, bitDepth, true);
-        writeString(36, 'data');
-        view.setUint32(40, dataSize, true);
-
-        // Write audio data
-        const channelData = [];
-        for (let i = 0; i < numberOfChannels; i++) {
-            channelData.push(audioBuffer.getChannelData(i));
-        }
-
-        let offset = 44;
-        for (let i = 0; i < samples; i++) {
-            for (let channel = 0; channel < numberOfChannels; channel++) {
-                // Convert float32 (-1 to 1) to int16 (-32768 to 32767)
-                const sample = Math.max(-1, Math.min(1, channelData[channel][i]));
-                const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-                view.setInt16(offset, int16, true);
-                offset += 2;
-            }
-        }
-
-        return new Blob([buffer], { type: 'audio/wav' });
-    }
-
-    _mixAudioBuffers(buffers, audioContext) {
-        if (buffers.length === 0) return null;
-        if (buffers.length === 1) return buffers[0];
-
-        // Find the longest buffer
-        const maxLength = Math.max(...buffers.map(b => b.length));
-        const numberOfChannels = Math.max(...buffers.map(b => b.numberOfChannels));
-        const sampleRate = buffers[0].sampleRate;
-
-        // Create output buffer
-        const mixedBuffer = audioContext.createBuffer(
-            numberOfChannels,
-            maxLength,
-            sampleRate
-        );
-
-        // Mix all buffers
-        for (let channel = 0; channel < numberOfChannels; channel++) {
-            const outputData = mixedBuffer.getChannelData(channel);
-
-            for (const buffer of buffers) {
-                const channelIdx = Math.min(channel, buffer.numberOfChannels - 1);
-                const inputData = buffer.getChannelData(channelIdx);
-
-                for (let i = 0; i < inputData.length; i++) {
-                    outputData[i] = (outputData[i] || 0) + inputData[i] / buffers.length;
-                }
-            }
-
-            // Normalize if clipping occurs
-            let max = 0;
-            for (let i = 0; i < outputData.length; i++) {
-                const abs = Math.abs(outputData[i]);
-                if (abs > max) max = abs;
-            }
-            if (max > 1) {
-                for (let i = 0; i < outputData.length; i++) {
-                    outputData[i] /= max;
-                }
-            }
-        }
-
-        return mixedBuffer;
     }
     // ============== Outline helpers (SaveMode-style) ==============
 
@@ -1511,6 +1533,7 @@ export class Library {
             // Restore from cache
             const originalMaterial = this._globalLibraryMaterialCache.get(child);
             if (originalMaterial) {
+                this._disposeMaterial(child.material, originalMaterial);
                 child.material = originalMaterial;
             }
         });
@@ -1544,6 +1567,7 @@ export class Library {
             // Restore from cache
             const originalMaterial = this._globalLibraryMaterialCache.get(child);
             if (originalMaterial) {
+                this._disposeMaterial(child.material, originalMaterial);
                 child.material = originalMaterial;
             }
         });
@@ -1600,13 +1624,18 @@ export class Library {
         // Placeholder for solid animation updates
     }
 
-    _beginPanelEdit() {
+    _beginPanelEdit(editType) {
         this._panelEditDepth++;
-        if (this._panel) this._panel.classList.add('editing-active');
+        if (this._panel) {
+            this._panel.classList.add('editing-active', `editing-${editType}`);
+        }
     }
 
-    _endPanelEdit() {
+    _endPanelEdit(editType) {
         this._panelEditDepth = Math.max(0, this._panelEditDepth - 1);
+        if (this._panel) {
+            this._panel.classList.remove(`editing-${editType}`);
+        }
         if (this._panelEditDepth === 0 && this._panel) {
             this._panel.classList.remove('editing-active');
         }

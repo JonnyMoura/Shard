@@ -1,0 +1,104 @@
+/* Mode Close Button */
+.mode-close-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+
+    background: rgba(var(--color-navy-rgb), 0.8);
+    border: 1px solid rgba(var(--color-mint-rgb), 0.3);
+    border-radius: 50%;
+
+    font-family: var(--font-ui);
+    font-size: 28px;
+    font-weight: 300;
+    color: var(--color-cyan);
+    line-height: 1;
+
+    cursor: pointer;
+    z-index: 10000;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px rgba(var(--color-mint-rgb), 0.2);
+}
+
+.mode-close-btn:hover {
+    background: rgba(var(--color-mint-rgb), 0.15);
+    border-color: var(--color-mint);
+    color: var(--color-mint);
+    box-shadow: 0 0 20px rgba(var(--color-mint-rgb), 0.4);
+    transform: rotate(90deg);
+}
+
+.mode-close-btn:active {
+    transform: rotate(90deg) scale(0.95);
+}
+
+.mode-close-btn.locked {
+    opacity: 0;
+    pointer-events: none;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Mode Tutorial Message - First-time help text */
+.mode-tutorial-message {
+    position: fixed;
+    top: 80px; /* CHANGED: Position at top, below tabs area */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4000;
+
+    font-family: var(--font-ui);
+    font-size: 1.1rem;
+    font-weight: 100;
+    color: var(--color-cyan);
+    text-align: center;
+    letter-spacing: 0.05em;
+
+    max-width: 90%;
+    width: auto;
+    padding: 0 20px;
+
+    background: transparent;
+    border: none;
+
+    text-shadow: 0 0 8px rgba(var(--color-cyan-rgb), 0.3);
+
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease; /* CHANGED: Faster transition (was 0.5s) */
+}
+
+.mode-tutorial-message.visible {
+    opacity: 1;
+    transition: opacity 0.5s ease; /* Slower fade-in */
+}
+
+.mode-tutorial-message.fade-out {
+    opacity: 0;
+    transition: opacity 0.2s ease; /* CHANGED: Even faster fade-out */
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .mode-tutorial-message {
+        font-size: 1rem;
+        top: 70px; /* CHANGED: Adjusted for smaller screens */
+        max-width: 95%;
+    }
+}
+
+@media (max-width: 600px) {
+    .mode-tutorial-message {
+        font-size: 0.95rem;
+        top: 65px; /* CHANGED: Adjusted for mobile */
+        max-width: 98%;
+        padding: 0 10px;
+    }
+}

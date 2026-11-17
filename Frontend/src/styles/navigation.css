@@ -1,0 +1,130 @@
+/* Top navigation bar */
+.top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    z-index: 2000;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.top-nav-left,
+.top-nav-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+}
+
+/* Bottom navigation bar */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    z-index: 2000;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.bottom-nav-left,
+.bottom-nav-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+}
+
+
+
+/* Base style for all main screen buttons */
+.main-screen-btn {
+    font-family: var(--font-ui);
+    padding: 0 0;
+    border: none;
+    background: transparent;
+    color: rgb(255, 254, 246);
+    cursor: pointer;
+    font-size: 1.3em;
+    transition: all 0.2s ease;
+    position: relative;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    text-shadow: 2px 2px 2px rgba(255, 255, 255, 0.25);
+    display: inline-block;
+    width: auto;
+    overflow: hidden;
+}
+
+
+
+/* Remove underline animations for hamburger menu */
+.main-screen-btn::after {
+    display: none;
+}
+
+/* Remove selected state underline */
+.main-screen-btn.selected::after {
+    display: none;
+}
+
+/* Smooth text transition for changing button text */
+.main-screen-btn .button-text {
+    display: block;
+    overflow: hidden;
+}
+
+/* Use the same approach as your working example */
+.main-screen-btn .button-text.old,
+.main-screen-btn .button-text.new {
+    display: block;
+    overflow: hidden;
+    transition: all 1.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-screen-btn .button-text.old {
+    height: auto;
+    opacity: 1;
+    width: auto;
+}
+
+.main-screen-btn .button-text.new {
+    color: #fff;
+    height: 0;
+    opacity: 0.1;
+    width: 0;
+}
+
+.main-screen-btn.text-changing .button-text.old {
+    height: 0px;
+    opacity: 0.1;
+    width: 0px;
+}
+
+.main-screen-btn.text-changing .button-text.new {
+    height: auto;
+    opacity: 1;
+    width: auto;
+}
+
+/* Hidden state */
+.main-screen-btn.hidden {
+    display: none !important;
+}
+
+/* Active/pressed state */
+.main-screen-btn:active {
+    transform: translateY(0);
+    color: #9999997a;
+}

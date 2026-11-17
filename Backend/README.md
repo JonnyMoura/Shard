@@ -1,47 +1,39 @@
-# Audio Evolution Project
+# Backend
 
-## Overview
-The Audio Evolution Project aims to improve audio solutions through an evolutionary algorithm utilizing MAP-Elites. The project synthesizes audio based on parameters evolved by the algorithm, allowing for the exploration of innovative audio solutions.
+The Python backend generates audio with an evolutionary MAP-Elites algorithm and serves generations to the frontend over WebSocket.
 
-## Project Structure
-```
-audio-evolution-project
-├── src
-│   ├── audio_synthesis.py       # Contains audio synthesis logic
-│   ├── evolutionary_module.py    # Implements the evolutionary algorithm
-│   ├── main.py                   # Entry point for executing the project
-│   └── types
-│       └── index.py              # Defines custom types and data structures
-├── data
-│   └── evolved_population.json    # Stores the evolved population of audio solutions
-├── requirements.txt               # Lists project dependencies
-└── README.md                      # Project documentation
+From the repository root, install the dependencies and start the backend:
+
+```powershell
+python -m pip install -r Backend/requirements.txt
+python Backend/src/main.py
 ```
 
-## Setup Instructions
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd audio-evolution-project
-   ```
+The frontend connects to `ws://localhost:8765`. See the [project README](../README.md) for frontend setup.
 
-2. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+Run an evaluation from this directory with:
 
-## Usage
-To run the project, execute the `main.py` file:
-```
-python src/main.py
+```powershell
+python -m src.evaluation_runner --runs 1 --generations 5 --pop 64 --sr 44100 --dims 20 20 20
 ```
 
-This will initiate the evolutionary process, synthesize audio solutions, and store the evolved population in `data/evolved_population.json`.
+The population, sample rate, and three archive dimensions control the actual
+evaluation run. Relative catalog, audio, and output paths resolve from
+`Backend/`.
 
-## Goals
-- Implement an evolutionary algorithm to explore and improve audio solutions.
-- Utilize MAP-Elites for effective solution diversity and quality.
-- Provide a framework for audio synthesis that can be easily modified and extended.
+## Source layout
 
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any suggestions or improvements.
+- `src/main.py` coordinates the live application and its WebSocket/evolution
+  loop.
+- `src/generation_payload.py` builds the generation message sent to the
+  frontend.
+- `src/synthesis_pipeline.py` resolves source paths and runs synthesis jobs.
+- `src/fitness.py` calculates descriptor-based automatic fitness;
+  `src/evolutionary_module.py` configures the archive and emitters.
+- `src/feedback_validation.py` validates that scores match the generation
+  awaiting evaluation.
+- `tests/` contains focused regression tests. Run them from `Backend/` with:
+
+  ```powershell
+  python -m unittest discover -s tests
+  ```

@@ -45,6 +45,23 @@ export class ParticleSystem {
         this.evolvingActive = false;
         this.grainsPerVisiblePeak = 300;
         this.categoryFilterActive = false;
+        this.grainGeometry = new THREE.SphereGeometry(0.09, 8, 8);
+        this.grainMaterial = new THREE.MeshStandardMaterial({
+            color: 0xe0dbc1,
+            emissive: 0xe0dbc1,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.8
+        });
+        this._grainTransform = new THREE.Object3D();
+        this._scratch = {
+            target: new THREE.Vector3(),
+            toTarget: new THREE.Vector3(),
+            fromCenter: new THREE.Vector3(),
+            up: new THREE.Vector3(0, 1, 0),
+            orbitDirection: new THREE.Vector3(),
+            orbitDeviation: new THREE.Vector3(),
+        };
 
         this.defaultGrainClearance = 1.0;
         this.grainColumnHeight = 6.0;
@@ -174,19 +191,6 @@ export class ParticleSystem {
 
             const grainCount = 300;
             for (let j = 0; j < grainCount; j++) {
-                const grain = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.09, 8, 8),
-                    new THREE.MeshStandardMaterial({ 
-                        color: 0xe0dbc1,
-                        emissive: 0xe0dbc1,        
-                        emissiveIntensity: 0.3,
-                        transparent: true,
-                        opacity: 0.8
-                    })
-                );
-
-                grain.layers.enable(1);
-
                 const heightFactor = Math.random();
                 const minRadius = 0.2 * this.baseRadius;
                 const scaledRadius = minRadius + (1 - heightFactor) * (this.baseRadius - minRadius);
@@ -198,14 +202,18 @@ export class ParticleSystem {
                 const baseSpeed = 0.025 + 0.050 * Math.random();
                 const maxSpeed = 0.15 + 0.18 * Math.random();
 
-                grain.userData = {
+                const grain = {
+                    position: new THREE.Vector3(),
+                    visible: true,
+                    userData: {
                     heightFactor,
                     angle,
                     randomization,
                     transitionSeed: Math.random() * 100,
                     baseAccel,
                     baseSpeed,
-                    maxSpeed
+                    maxSpeed,
+                    }
                 };
 
                 grain.position.set(
@@ -224,11 +232,11 @@ export class ParticleSystem {
 
                 grain.userData.acceleration = new THREE.Vector3();
 
-                this.scene.add(grain);
                 peak.grains.push(grain);
                 peak.grainTargets.push(grain.position.clone());
             }
 
+            this._createGrainInstances(peak);
             this.peaks.push(peak);
             this.previousHeights.push(8);
         }
@@ -268,6 +276,7 @@ export class ParticleSystem {
         this.peakSolids.forEach(solid => {
             if (solid && this.scene) {
                 this.scene.remove(solid);
+                this.disposeObject(solid);
             }
         });
         this.peakSolids = [];
@@ -351,7 +360,6 @@ export class ParticleSystem {
             try {
                 const grain = this.createSingleGrain(peak);
                 if (grain) {
-                    this.scene.add(grain);
                     peak.grains.push(grain);
                     peak.grainTargets.push(grain.position.clone());
                 }
@@ -360,6 +368,7 @@ export class ParticleSystem {
             }
         }
 
+        this._createGrainInstances(peak);
         this.peaks.push(peak);
         this.previousHeights.push(8);
     }
@@ -368,12 +377,9 @@ export class ParticleSystem {
         if (index < 0 || index >= this.peaks.length) return;
         
         const peak = this.peaks[index];
-        if (peak && peak.grains) {
-            peak.grains.forEach(grain => {
-                if (grain && this.scene) {
-                    this.scene.remove(grain);
-                }
-            });
+        if (peak?.grainInstances && this.scene) {
+            this.scene.remove(peak.grainInstances);
+            peak.grainInstances.dispose();
         }
         
         this.peaks.splice(index, 1);
@@ -382,19 +388,40 @@ export class ParticleSystem {
         }
     }
 
-    createSingleGrain(peak) {
-        const grain = new THREE.Mesh(
-            new THREE.SphereGeometry(0.09, 8, 8),
-            new THREE.MeshStandardMaterial({ 
-                color: 0xe0dbc1,
-                emissive: 0xe0dbc1,        
-                emissiveIntensity: 0.3,
-                transparent: true,
-                opacity: 0.8
-            })
+    _createGrainInstances(peak) {
+        const instances = new THREE.InstancedMesh(
+            this.grainGeometry,
+            this.grainMaterial,
+            peak.grains.length
         );
+        instances.layers.enable(1);
+        instances.frustumCulled = false;
+        peak.grainInstances = instances;
+        this.scene.add(instances);
+        this.syncPeakGrains(peak);
+    }
 
-        grain.layers.enable(1);
+    syncPeakGrains(peak) {
+        const instances = peak?.grainInstances;
+        if (!instances) return;
+
+        const transform = this._grainTransform;
+        peak.grains.forEach((grain, index) => {
+            transform.position.copy(grain.position);
+            transform.scale.setScalar(grain.visible ? 1 : 0);
+            transform.updateMatrix();
+            instances.setMatrixAt(index, transform.matrix);
+        });
+        instances.visible = !this.categoryFilterActive || peak.categoryVisible !== false;
+        instances.instanceMatrix.needsUpdate = true;
+    }
+
+    createSingleGrain(peak) {
+        const grain = {
+            position: new THREE.Vector3(),
+            visible: true,
+            userData: {},
+        };
 
         const heightFactor = Math.random();
         const minRadius = 0.2 * this.baseRadius;
@@ -461,6 +488,7 @@ export class ParticleSystem {
             const solid = this.peakSolids.pop();
             if (solid && this.scene) {
                 this.scene.remove(solid);
+                this.disposeObject(solid);
             }
         }
         
@@ -469,6 +497,17 @@ export class ParticleSystem {
                 this.frozenSwarmPositions = generateSwarmPeakPositions(peakCount, this.time);
             }
         }
+    }
+
+    disposeObject(object) {
+        object.traverse(child => {
+            if (!child.isMesh) return;
+            child.geometry?.dispose();
+            const materials = Array.isArray(child.material)
+                ? child.material
+                : [child.material];
+            materials.forEach(material => material?.dispose());
+        });
     }
 
     smoothTransition(current, target, speed) {
@@ -592,7 +631,7 @@ export class ParticleSystem {
         frequencyData = new Uint8Array(10);
     }
 
-    this.time += 0.016;
+    this.time += 1 / 60;
     this.frameCounter++;
 
     if (this.frameCounter % Math.floor(this.updateInterval / 16) !== 0) {
@@ -725,6 +764,7 @@ export class ParticleSystem {
     }
 
     // Grain updates
+    const t = performance.now() * 0.001;
     this.peaks.forEach((peak, index) => {
         if (!peak || !peak.grains) return;
         if (this.categoryFilterActive && peak.categoryVisible === false) return;
@@ -755,7 +795,7 @@ export class ParticleSystem {
                 const centerY = solid.position.y + centerOffsetY;
                 const solidBottom = centerY - clearance;
                 const solidTop = centerY + clearance;
-                
+
                 // CHANGED: When solid is below ground, use TOP of solid as pillar endpoint
                 // When solid is above ground, use BOTTOM of solid as pillar endpoint
                 if (centerY < 0) {
@@ -776,8 +816,6 @@ export class ParticleSystem {
                 const { heightFactor, angle, randomization } = grain.userData;
                 if (!heightFactor || !angle || !randomization) continue;
 
-                const t = performance.now() * 0.001;
-
                 const minRadius = 0.8 * this.baseRadius;
                 const maxRadius = this.baseRadius * 2.5;
                 const baseRadius = minRadius + (1 - heightFactor) * (maxRadius - minRadius);
@@ -797,11 +835,11 @@ export class ParticleSystem {
                     // CHANGED: Particles form a pillar from ground (0) to the bottom of the solid (topY)
                     // When solid is above 0: pillar goes from 0 up to topY
                     // When solid is below 0: pillar goes from topY up to 0
-                    
+
                     const groundY = 0;
                     const minY = Math.min(groundY, topY);
                     const maxY = Math.max(groundY, topY);
-                    
+
                     const range = Math.max(0.1, maxY - minY);
                     
                     const noise = (
@@ -820,7 +858,7 @@ export class ParticleSystem {
                         + Math.cos(t * (0.22 + 0.15 * randomization[2]) + j * 0.15) * 0.6 * smoothedHeight * 0.25;
                 }
 
-                const vagueTarget = new THREE.Vector3(
+                const vagueTarget = this._scratch.target.set(
                     peak.currentPyramidCenter.x + wanderRadius * Math.cos(wanderAngle),
                     wanderHeight,  // CHANGED: Removed Math.max(0.1, ...) - allow negative Y
                     peak.currentPyramidCenter.z + wanderRadius * Math.sin(wanderAngle)
@@ -829,15 +867,20 @@ export class ParticleSystem {
                 if (!grain.userData.velocity) grain.userData.velocity = new THREE.Vector3();
                 if (!grain.userData.acceleration) grain.userData.acceleration = new THREE.Vector3();
 
-                const toVague = new THREE.Vector3().subVectors(vagueTarget, grain.position);
+                const toVague = this._scratch.toTarget.subVectors(
+                    vagueTarget, grain.position
+                );
                 const springStrength = grain.userData.baseAccel * 0.12;
                 grain.userData.acceleration.copy(toVague).multiplyScalar(springStrength);
 
-                const fromCenter = new THREE.Vector3().subVectors(grain.position, peak.currentPyramidCenter);
+                const fromCenter = this._scratch.fromCenter.subVectors(
+                    grain.position, peak.currentPyramidCenter
+                );
                 const distFromCenter = fromCenter.length();
                 if (distFromCenter > 0.001) {
-                    const up = new THREE.Vector3(0, 1, 0);
-                    let orbitDir = new THREE.Vector3().crossVectors(fromCenter, up).normalize();
+                    const orbitDir = this._scratch.orbitDirection
+                        .crossVectors(fromCenter, this._scratch.up)
+                        .normalize();
 
                     const orbitSpeed = 0.4 + 0.08 * randomization[0];
                     const orbitPhase = t * orbitSpeed + grain.userData.transitionSeed;
@@ -851,7 +894,11 @@ export class ParticleSystem {
                         );
                         grain.userData.lastDeviationTime = t;
                     }
-                    orbitDir.add(grain.userData.orbitDeviation.clone().multiplyScalar(0.3)).normalize();
+                    orbitDir.add(
+                        this._scratch.orbitDeviation
+                            .copy(grain.userData.orbitDeviation)
+                            .multiplyScalar(0.3)
+                    ).normalize();
 
                     grain.userData.acceleration.add(orbitDir.multiplyScalar(orbitAmount));
                     grain.userData.acceleration.y += Math.sin(orbitPhase + j * 0.3) * 0.03;
@@ -883,7 +930,7 @@ export class ParticleSystem {
         solid.position.z = peak.currentPyramidCenter.z;
 
         if (!solid.userData.evolvingManualY) {
-            solid.position.y = height + 10;
+            solid.position.y = 10;
         }
         
         // ADDED: Update category in userData to match solution
@@ -904,6 +951,7 @@ export class ParticleSystem {
 
     // Update grid lighting
     this.updateGridLighting();
+    this.peaks.forEach(peak => this.syncPeakGrains(peak));
 }
 
     updateGridLighting() {
@@ -948,7 +996,6 @@ export class ParticleSystem {
             material.uniforms.lightIntensities.value = intArray;
             material.uniforms.maxLights.value = Math.min(lightIntensities.filter(i => i > 0).length, 20);
             
-            material.needsUpdate = true;
         }
     }
 
@@ -1029,6 +1076,7 @@ export class ParticleSystem {
                         grain.visible = isVisible && g < grainsPerSolution;
                     }
                 }
+                this.syncPeakGrains(peak);
             }
         }
     }
@@ -1049,6 +1097,7 @@ export class ParticleSystem {
                         if (grain) grain.visible = true;
                     }
                 }
+                this.syncPeakGrains(peak);
             }
         }
     }
@@ -1469,4 +1518,3 @@ _applyExplorationForces(index, forceOffset, time) {
     }
 }
 }
-

@@ -1,55 +1,38 @@
-# Sound Particle Visualization
+# Shard Frontend
 
-This project is a 3D visualization of sound particles. Currently, it uses fake audio data for testing purposes. Future updates will integrate real audio data from a backend.
+The frontend renders synthesized generations from the Python backend as an
+interactive Three.js scene. It connects to the backend over
+`ws://localhost:8765`.
 
-## Project Structure
+## Run locally
 
-- **src/**: Contains the source code for the application.
-  - **index.html**: Main HTML entry point.
-  - **main.js**: Initializes the Three.js scene and integrates components.
-  - **styles.css**: CSS styles for the application.
-  - **components/**: Contains the main components of the visualization.
-    - **ParticleSystem.js**: Manages particle creation and animation.
-    - **AudioVisualizer.js**: Handles audio playback and visual representation.
-    - **BlockMapper.js**: Maps particle positions to 3D blocks.
-  - **utils/**: Utility functions for common tasks.
-    - **helpers.js**: Functions for loading textures and managing audio.
+From this directory:
 
-- **assets/**: Contains audio and texture assets.
-  - **audio/**: Example audio files for testing.
-    - **sample-audio.mp3**: Sample audio file.
-  - **textures/**: Texture images for the 3D blocks.
-    - **block-texture.jpg**: Texture for the blocks.
+```powershell
+npm install
+npm start
+```
 
-- **package.json**: Configuration file for npm, listing dependencies and scripts.
-- **webpack.config.js**: Configuration file for Webpack, specifying how to bundle the application.
+In another terminal, start the backend from the repository root:
 
-## Setup Instructions
+```powershell
+python Backend/src/main.py
+```
 
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd sound-particle-visualization
-   ```
+The Webpack development server listens on `http://localhost:9000`. To create a
+production bundle, run `npm run build`; generated files are written to `dist/`.
+The generated bundle uses relative, runtime-resolved asset URLs so it can be
+served from the repository root or a project subpath.
 
-2. Install the dependencies:
-   ```
-   npm install
-   ```
+To inspect bundle composition, run `npm run analyze`.
 
-3. Run the application:
-   ```
-   npm start
-   ```
+## Source layout
 
-4. Open your browser and navigate to `http://localhost:9000` to view the visualization.
-
-## Usage Guidelines
-
-- The application visualizes sound particles based on audio synthesis parameters.
-- Adjust the audio parameters to see how they affect the particle visualization.
-- Explore the architectural metaphor created by the 3D blocks representing the particles.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
+- `src/main.js` initializes the scene and wires the application components.
+- `src/components/Navigation.js` owns the hamburger menu and its hover messages.
+- `src/components/KeyboardControls.js` handles keyboard input and movement keys.
+- `src/components/ModeTutorialSystem.js` manages first-use help messages.
+- `src/components/TitleScreen.js` renders the animated launch screen.
+- `src/audio/audio-export.js` encodes and mixes exported library audio.
+- `src/styles.css` imports the ordered style sections in `src/styles/`; keep
+  their import order stable because the cascade is shared across the UI.

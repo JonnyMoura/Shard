@@ -1,8 +1,9 @@
 numpy
 matplotlib
-pyswarms
 ribs
-scipy
 soundfile
 librosa
-jsonschema
+pandas
+tqdm
+pedalboard
+websockets
